@@ -21,6 +21,7 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
+# 🎨 DISEÑO WEB ADAPTATIVO INTELIGENTE (SIN COLUMNAS EN CEROS)
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -49,7 +50,6 @@ HTML_BASE = """
         header { position: relative; text-align: center; margin-bottom: 25px; padding: 15px; background-color: var(--bg-card); border-radius: 6px; border-bottom: 3px solid #444444; }
         h2 { color: #ffffff; font-size: 1.6rem; letter-spacing: 1px; }
         
-        /* BOTÓN DE INTERRUPTOR DE TEMA */
         .theme-toggle { position: absolute; top: 15px; right: 15px; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; background-color: #444444; color: white; }
         
         .container { max-width: 1100px; margin: 0 auto; }
@@ -63,7 +63,6 @@ HTML_BASE = """
         .btn-baja { background-color: #444444; border: 1px solid #555555; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* CONTENEDORES DE BLOQUES */
         .contenedor-modelo { background-color: var(--bg-card); border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid var(--input-border); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
         
         .header-modelo-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px 15px; border-radius: 4px; color: #ffffff; }
@@ -82,11 +81,10 @@ HTML_BASE = """
         .tabla-catalogo th { background-color: var(--bg-th); color: #999999; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid var(--border-color); }
         .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid var(--border-color); }
         
-        .col-color { text-align: left; font-weight: bold; color: var(--text-color); padding-left: 15px !important; width: 45%; }
+        .col-color { text-align: left; font-weight: bold; color: var(--text-color); padding-left: 15px !important; }
         .stock-num { font-weight: bold; color: var(--text-color); }
         .stock-cero { color: #3d3d3d !important; font-weight: normal; }
         
-        /* 📊 FILA DE SUMAS ROJAS COMPATIBLE EXCEL */
         .fila-totales-excel { width: 100%; padding: 8px 15px; background-color: var(--bg-block); font-size: 0.9rem; font-weight: bold; color: #e63946; border-top: 1px dashed #e63946; display: flex; justify-content: space-between; flex-wrap: wrap; }
     </style>
 </head>
@@ -201,7 +199,6 @@ HTML_BASE = """
                 let esAzul = true;
                 
                 for (let mod in estructura) {
-                    // Calcular el acumulado total sumando todos los estampados de este lote
                     let totalLoteAcumulado = 0;
                     for (let est_k in estructura[mod]) {
                         estructura[mod][est_k].forEach(p => {
@@ -219,6 +216,15 @@ HTML_BASE = """
                     `;
                     
                     for (let est in estructura[mod]) {
+                        // 🧠 REVISIÓN DE COLUMNAS ACTIVAS WEB: Filtramos si la columna completa está en ceros
+                        let sumCH = 0, sumM = 0, sumG = 0, sumEG = 0;
+                        estructura[mod][est].forEach(p => {
+                            sumCH += p.talla_ch;
+                            sumM += p.talla_m;
+                            sumG += p.talla_g;
+                            sumEG += p.talla_eg;
+                        });
+
                         htmlBlock += `
                             <div class="bloque-estampado">
                                 <div class="titulo-estampado">${est.toUpperCase()}</div>
@@ -226,41 +232,41 @@ HTML_BASE = """
                                     <thead>
                                         <tr>
                                             <th style="text-align: left; padding-left: 15px;">Color</th>
-                                            <th style="width: 12%;">CH</th>
-                                            <th style="width: 12%;">M</th>
-                                            <th style="width: 12%;">G</th>
-                                            <th style="width: 12%;">EG</th>
+                                            ${sumCH > 0 ? '<th style="width: 13%;">CH</th>' : ''}
+                                            ${sumM > 0 ? '<th style="width: 13%;">M</th>' : ''}
+                                            ${sumG > 0 ? '<th style="width: 13%;">G</th>' : ''}
+                                            ${sumEG > 0 ? '<th style="width: 13%;">EG</th>' : ''}
                                         </tr>
                                     </thead>
                                     <tbody>
                         `;
                         
-                        let sumCH = 0, sumM = 0, sumG = 0, sumEG = 0;
-                        
                         estructura[mod][est].forEach(p => {
-                            sumCH += p.talla_ch;
-                            sumM += p.talla_m;
-                            sumG += p.talla_g;
-                            sumEG += p.talla_eg;
-
                             htmlBlock += `
                                 <tr>
                                     <td class="col-color">${p.color.toUpperCase()}</td>
-                                    <td class="stock-num ${p.talla_ch == 0 ? 'stock-cero' : ''}">${p.talla_ch}</td>
-                                    <td class="stock-num ${p.talla_m == 0 ? 'stock-cero' : ''}">${p.talla_m}</td>
-                                    <td class="stock-num ${p.talla_g == 0 ? 'stock-cero' : ''}">${p.talla_g}</td>
-                                    <td class="stock-num ${p.talla_eg == 0 ? 'stock-cero' : ''}">${p.talla_eg}</td>
+                                    ${sumCH > 0 ? `<td class="stock-num ${p.talla_ch == 0 ? 'stock-cero' : ''}">${p.talla_ch}</td>` : ''}
+                                    ${sumM > 0 ? `<td class="stock-num ${p.talla_m == 0 ? 'stock-cero' : ''}">${p.talla_m}</td>` : ''}
+                                    ${sumG > 0 ? `<td class="stock-num ${p.talla_g == 0 ? 'stock-cero' : ''}">${p.talla_g}</td>` : ''}
+                                    ${sumEG > 0 ? `<td class="stock-num ${p.talla_eg == 0 ? 'stock-cero' : ''}">${p.talla_eg}</td>` : ''}
                                 </tr>
                             `;
                         });
                         
                         let sumaTotalTabla = sumCH + sumM + sumG + sumEG;
 
+                        // Armar el texto inferior de totales de forma dinámica
+                        let partesTotales = [];
+                        if (sumCH > 0) partesTotales.push(`CH: ${sumCH}`);
+                        if (sumM > 0) partesTotales.push(`M: ${sumM}`);
+                        if (sumG > 0) partesTotales.push(`G: ${sumG}`);
+                        if (sumEG > 0) partesTotales.push(`EG: ${sumEG}`);
+
                         htmlBlock += `
                                     </tbody>
                                 </table>
                                 <div class="fila-totales-excel">
-                                    <div>CH: ${sumCH} &nbsp;|&nbsp; M: ${sumM} &nbsp;|&nbsp; G: ${sumG} &nbsp;|&nbsp; EG: ${sumEG}</div>
+                                    <div>${partesTotales.join(' &nbsp;|&nbsp; ')}</div>
                                     <div>SUMA TOTAL: ${sumaTotalTabla}</div>
                                 </div>
                             </div>
