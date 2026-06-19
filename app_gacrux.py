@@ -21,7 +21,7 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# 🎨 DISEÑO INDUSTRIAL INTERCALADO: AZUL OSCURO Y ROJO OSCURO CON LÍNEAS DE SOPORTE
+# 🎨 DISEÑO FORMAL Y ACTUALIZACIÓN EN TIEMPO REAL AUTOMÁTICA
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -47,24 +47,19 @@ HTML_BASE = """
         .btn-baja:hover { background-color: #333333; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* 📦 CONFIGURACIÓN DE LOS BLOQUES INTERCALADOS */
+        /* BLOQUES INTERCALADOS */
         .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid #404040; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
         .titulo-modelo { font-size: 1.6rem; font-weight: bold; margin-bottom: 20px; padding-bottom: 6px; text-transform: uppercase; border-bottom: 2px solid #404040; }
         
-        /* VARIACIONES DE COLOR POR MODELO */
-        .mod-azul .titulo-modelo { color: #1e3a8a; } /* Azul Oscuro */
-        .mod-rojo .titulo-modelo { color: #7f1d1d; } /* Rojo Oscuro */
+        .mod-azul .titulo-modelo { color: #1e3a8a; } 
+        .mod-rojo .titulo-modelo { color: #7f1d1d; } 
         
-        /* BLOQUES DE ESTAMPADOS CON LÍNEA DE SOPORTE */
         .bloque-estampado { margin-bottom: 25px; background-color: #1f1f1f; padding: 15px; border-radius: 4px; }
-        
-        /* La línea izquierda que sostiene la tabla */
         .mod-azul .bloque-estampado { border-left: 5px solid #1e3a8a; }
         .mod-rojo .bloque-estampado { border-left: 5px solid #7f1d1d; }
         
         .titulo-estampado { font-size: 1.2rem; font-weight: bold; color: #ffffff; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
         
-        /* TABLES COMPACTAS */
         .tabla-catalogo { width: 100%; border-collapse: collapse; text-align: center; background-color: #161616; }
         .tabla-catalogo th { background-color: #282828; color: #999999; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #333333; }
         .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid #333333; }
@@ -83,7 +78,7 @@ HTML_BASE = """
 
         <div class="seccion">
             <h3>Ajuste Rápido de Almacén</h3>
-            <input type="text" id="codigo_barres" placeholder="Escanea o escribe código de barras..." autocomplete="off">
+            <input type="text" id="codigo_barras" placeholder="Escanea o escribe código de barras..." autocomplete="off">
             <button class="btn btn-baja" onclick="procesarBaja()">Descontar 1 Unidad</button>
             <div id="notificacion"></div>
         </div>
@@ -97,10 +92,10 @@ HTML_BASE = """
     </div>
 
     <script>
-        document.getElementById('codigo_barres').focus();
+        document.getElementById('codigo_barras').focus();
 
         function procesarBaja() {
-            let codigo = document.getElementById('codigo_barres').value.trim();
+            let codigo = document.getElementById('codigo_barras').value.trim();
             if(!codigo) return;
             
             fetch('/api/baja', {
@@ -119,12 +114,12 @@ HTML_BASE = """
                     notif.style.color = '#e63946';
                     notif.innerText = "ERROR: " + data.msg;
                 }
-                document.getElementById('codigo_barres').value = '';
-                document.getElementById('codigo_barres').focus();
+                document.getElementById('codigo_barras').value = '';
+                document.getElementById('codigo_barras').focus();
             });
         }
 
-        document.getElementById('codigo_barres').addEventListener('keypress', function(e) {
+        document.getElementById('codigo_barras').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') { procesarBaja(); }
         });
 
@@ -136,7 +131,6 @@ HTML_BASE = """
                 let contenedor = document.getElementById('resultado_busqueda');
                 contenedor.innerHTML = '';
                 
-                // 1. Estructurar árbol lógico: Modelo -> Estampado
                 let estructura = {};
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
@@ -148,7 +142,6 @@ HTML_BASE = """
                     estructura[mod][est].push(p);
                 });
                 
-                // 2. Renderizar intercalando clases visuales (.mod-azul y .mod-rojo)
                 let esAzul = true;
                 
                 for (let mod in estructura) {
@@ -193,14 +186,14 @@ HTML_BASE = """
                     
                     htmlBlock += `</div>`;
                     contenedor.innerHTML += htmlBlock;
-                    
-                    // Alternar para el siguiente modelo
                     esAzul = !esAzul;
                 }
             });
         }
         
+        // 🔄 AUTOMATIZACIÓN: Ejecuta la búsqueda inicial y luego repite cada 3 segundos en silencio
         buscarPrenda();
+        setInterval(buscarPrenda, 3000);
     </script>
 </body>
 </html>
