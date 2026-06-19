@@ -25,38 +25,64 @@ def conectar_bd():
             database="gacrux_pos"
         )
 # 🎨 DISEÑO RESPONSIVO PARA MÓVILES (HTML5 + CSS3)
+# 🎨 DISEÑO INTELIGENTE HÍBRIDO (MÓVIL = 1 COLUMNA | PC = MULTI-COLUMNAS)
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GACRUX - Almacén Móvil</title>
+    <title>GACRUX - Almacén Inteligente</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
         body { background-color: #1e1e24; color: #fff; padding: 15px; }
         header { text-align: center; margin-bottom: 20px; padding: 10px; background-color: #0288d1; border-radius: 8px; }
-        .container { max-width: 600px; margin: 0 auto; }
+        
+        /* Contenedor principal adaptable */
+        .container { max-width: 1200px; margin: 0 auto; }
+        
         .seccion { background-color: #2b2d42; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #3d405b; }
         h3 { margin-bottom: 10px; color: #edf2f4; font-size: 1.1rem; }
-        input[type="text"] { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 1rem; margin-bottom: 10px; }
+        input[type="text"] { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 1rem; margin-bottom: 10px; background-color: #fff; color: #333; }
+        
         .btn { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; }
         .btn-baja { background-color: #e63946; }
-        .btn-buscar { background-color: #2a9d8f; }
         #notificacion { text-align: center; margin-top: 10px; font-weight: bold; font-size: 0.95rem; }
-        .bloque-prenda { background-color: #fff; color: #333; padding: 12px; border-radius: 6px; margin-top: 10px; border-left: 5px solid #0288d1; }
+        
+        /* 🔥 MAGIA AQUÍ: Contenedor en cuadrícula flexible */
+        .grid-prendas { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
+            gap: 15px; 
+            margin-top: 10px; 
+        }
+        
+        /* Tarjetas compactas estilo catálogo */
+        .bloque-prenda { 
+            background-color: #fff; 
+            color: #333; 
+            padding: 12px; 
+            border-radius: 6px; 
+            border-left: 5px solid #0288d1;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        
         .tabla-stock { width: 100%; margin-top: 8px; border-collapse: collapse; text-align: center; }
-        .tabla-stock th { background-color: #e2e8f0; font-size: 0.85rem; padding: 4px; }
-        .tabla-stock td { font-size: 1rem; font-weight: bold; padding: 6px; border: 1px solid #cbd5e1; }
+        .tabla-stock th { background-color: #e2e8f0; font-size: 0.8rem; padding: 4px; color: #475569; }
+        .tabla-stock td { font-size: 0.95rem; font-weight: bold; padding: 6px; border: 1px solid #cbd5e1; color: #0f172a; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h2>GACRUX POS 📱</h2>
-            <p style="font-size: 0.85rem;">Módulo de Ajustes de Almacén</p>
+            <h2>GACRUX POS 📱💻</h2>
+            <p style="font-size: 0.85rem;">Módulo de Ajustes de Almacén Universal</p>
         </header>
 
+        <!-- 📦 MÓDULO DE BAJA RÁPIDA -->
         <div class="seccion">
             <h3>Ajuste Rápido (Pistola o Teclado)</h3>
             <input type="text" id="codigo_barras" placeholder="Escribe o escanea código..." autocomplete="off">
@@ -64,10 +90,13 @@ HTML_BASE = """
             <div id="notificacion"></div>
         </div>
 
+        <!-- 🔍 CONSULTA DE EXISTENCIAS -->
         <div class="seccion">
             <h3>Consultar Stock Real</h3>
-            <input type="text" id="busqueda" placeholder="Buscar estampado..." onkeyup="buscarPrenda()">
-            <div id="resultado_busqueda"></div>
+            <input type="text" id="busqueda" placeholder="Buscar estampado, modelo o color..." onkeyup="buscarPrenda()">
+            
+            <!-- 🔥 Aquí se inyectan las tarjetas en la cuadrícula inteligente -->
+            <div id="resultado_busqueda" class="grid-prendas"></div>
         </div>
     </div>
 
@@ -75,7 +104,7 @@ HTML_BASE = """
         document.getElementById('codigo_barras').focus();
 
         function procesarBaja() {
-            let codigo = document.getElementById('codigo_barras').value.strip ? document.getElementById('codigo_barras').value.strip() : document.getElementById('codigo_barras').value;
+            let codigo = document.getElementById('codigo_barras').value.trim();
             if(!codigo) return;
             
             fetch('/api/baja', {
@@ -113,8 +142,10 @@ HTML_BASE = """
                 data.forEach(p => {
                     contenedor.innerHTML += `
                         <div class="bloque-prenda">
-                            <div style="font-weight: bold; color: #0288d1; font-size: 0.9rem;">${p.modelo.toUpperCase()} - ${p.color}</div>
-                            <div style="font-size: 1rem; margin-top: 2px; font-weight: bold;">${p.estampado}</div>
+                            <div>
+                                <div style="font-weight: bold; color: #0288d1; font-size: 0.85rem; text-transform: uppercase;">${p.modelo} - ${p.color}</div>
+                                <div style="font-size: 1rem; margin-top: 2px; font-weight: bold; color: #1e293b;">${p.estampado}</div>
+                            </div>
                             <table class="tabla-stock">
                                 <tr><th>CH</th><th>M</th><th>G</th><th>EG</th></tr>
                                 <tr>
