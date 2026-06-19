@@ -129,7 +129,6 @@ HTML_BASE = """
                 let contenedor = document.getElementById('resultado_busqueda');
                 contenedor.innerHTML = '';
                 
-                // Agrupación de dos niveles estricta
                 let estructura = {};
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
@@ -145,7 +144,7 @@ HTML_BASE = """
                 
                 for (let mod in estructura) {
                     let claseColor = esAzul ? 'mod-azul' : 'mod-rojo';
-                    let htmlBlock = `<div class="contenedor-modelo ${claseColor}"><div class="titulo-modelo">MODELO: ${mod}</div>`;
+                    let htmlBlock = `<div class="contenedor-modelo ${claseColor}"><div class="titulo-modelo">${mod}</div>`;
                     
                     for (let est in estructura[mod]) {
                         htmlBlock += `
