@@ -21,7 +21,7 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# 🎨 DISEÑO ESTRUCTURADO EN CASCADA: MODELO -> ESTAMPADO -> TABLA DE COLORES
+# 🎨 DISEÑO INDUSTRIAL INTERCALADO: AZUL OSCURO Y ROJO OSCURO CON LÍNEAS DE SOPORTE
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -32,7 +32,7 @@ HTML_BASE = """
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
         body { background-color: #1a1a1a; color: #e0e0e0; padding: 15px; }
-        header { text-align: center; margin-bottom: 25px; padding: 15px; background-color: #262626; border-radius: 6px; border-bottom: 3px solid #e63946; }
+        header { text-align: center; margin-bottom: 25px; padding: 15px; background-color: #262626; border-radius: 6px; border-bottom: 3px solid #444444; }
         h2 { color: #ffffff; font-size: 1.6rem; letter-spacing: 1px; }
         
         .container { max-width: 1100px; margin: 0 auto; }
@@ -40,35 +40,45 @@ HTML_BASE = """
         h3 { margin-bottom: 15px; color: #ffffff; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.5px; }
         
         input[type="text"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid #404040; font-size: 1rem; margin-bottom: 15px; background-color: #333333; color: #ffffff; }
-        input[type="text"]:focus { border-color: #e63946; outline: none; }
+        input[type="text"]:focus { border-color: #888888; outline: none; }
         
         .btn { width: 100%; padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; transition: 0.2s; }
-        .btn-baja { background-color: #e63946; }
-        .btn-baja:hover { background-color: #b91c1c; }
+        .btn-baja { background-color: #444444; border: 1px solid #555555; }
+        .btn-baja:hover { background-color: #333333; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* BLOQUES PRINCIPALES */
-        .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 20px; margin-bottom: 30px; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        .titulo-modelo { font-size: 1.5rem; font-weight: bold; color: #ffffff; margin-bottom: 20px; padding-bottom: 4px; text-transform: uppercase; border-bottom: 2px solid #404040; }
+        /* 📦 CONFIGURACIÓN DE LOS BLOQUES INTERCALADOS */
+        .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid #404040; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .titulo-modelo { font-size: 1.6rem; font-weight: bold; margin-bottom: 20px; padding-bottom: 6px; text-transform: uppercase; border-bottom: 2px solid #404040; }
         
-        /* SECCIONES DE ESTAMPADOS */
-        .bloque-estampado { margin-bottom: 20px; background-color: #202020; padding: 15px; border-radius: 4px; border-left: 4px solid #e63946; }
-        .titulo-estampado { font-size: 1.15rem; font-weight: bold; color: #e63946; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        /* VARIACIONES DE COLOR POR MODELO */
+        .mod-azul .titulo-modelo { color: #1e3a8a; } /* Azul Oscuro */
+        .mod-rojo .titulo-modelo { color: #7f1d1d; } /* Rojo Oscuro */
         
-        /* TABLAS INDUSTRIALES COMPACTAS */
-        .tabla-catalogo { width: 100%; border-collapse: collapse; background-color: #1a1a1a; text-align: center; }
-        .tabla-catalogo th { background-color: #2d2d2d; color: #aaaaaa; font-size: 0.8rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #3a3a3a; }
-        .tabla-catalogo td { padding: 8px 10px; font-size: 0.95rem; border: 1px solid #3a3a3a; }
-        .col-color { text-align: left; font-weight: bold; color: #ffffff; padding-left: 15px !important; }
+        /* BLOQUES DE ESTAMPADOS CON LÍNEA DE SOPORTE */
+        .bloque-estampado { margin-bottom: 25px; background-color: #1f1f1f; padding: 15px; border-radius: 4px; }
+        
+        /* La línea izquierda que sostiene la tabla */
+        .mod-azul .bloque-estampado { border-left: 5px solid #1e3a8a; }
+        .mod-rojo .bloque-estampado { border-left: 5px solid #7f1d1d; }
+        
+        .titulo-estampado { font-size: 1.2rem; font-weight: bold; color: #ffffff; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        /* TABLES COMPACTAS */
+        .tabla-catalogo { width: 100%; border-collapse: collapse; text-align: center; background-color: #161616; }
+        .tabla-catalogo th { background-color: #282828; color: #999999; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #333333; }
+        .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid #333333; }
+        
+        .col-color { text-align: left; font-weight: bold; color: #dddddd; padding-left: 15px !important; width: 45%; }
         .stock-num { font-weight: bold; color: #ffffff; }
-        .stock-cero { color: #444444 !important; font-weight: normal; }
+        .stock-cero { color: #3d3d3d !important; font-weight: normal; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h2>SISTEMA GACRUX</h2>
-            <p style="font-size: 0.85rem; color: #888888; margin-top: 4px;">Control de Inventario Centralizado</p>
+            <p style="font-size: 0.85rem; color: #777777; margin-top: 4px;">Control de Inventario Centralizado</p>
         </header>
 
         <div class="seccion">
@@ -126,9 +136,8 @@ HTML_BASE = """
                 let contenedor = document.getElementById('resultado_busqueda');
                 contenedor.innerHTML = '';
                 
-                // 1. Agrupación de dos niveles en JavaScript: Modelo -> Estampado
+                // 1. Estructurar árbol lógico: Modelo -> Estampado
                 let estructura = {};
-                
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
                     let est = p.estampado.toUpperCase().trim();
@@ -139,9 +148,12 @@ HTML_BASE = """
                     estructura[mod][est].push(p);
                 });
                 
-                // 2. Construcción del HTML jerárquico limpio
+                // 2. Renderizar intercalando clases visuales (.mod-azul y .mod-rojo)
+                let esAzul = true;
+                
                 for (let mod in estructura) {
-                    let htmlBlock = `<div class="contenedor-modelo"><div class="titulo-modelo">${mod}</div>`;
+                    let claseColor = esAzul ? 'mod-azul' : 'mod-rojo';
+                    let htmlBlock = `<div class="contenedor-modelo ${claseColor}"><div class="titulo-modelo">${mod}</div>`;
                     
                     for (let est in estructura[mod]) {
                         htmlBlock += `
@@ -181,6 +193,9 @@ HTML_BASE = """
                     
                     htmlBlock += `</div>`;
                     contenedor.innerHTML += htmlBlock;
+                    
+                    // Alternar para el siguiente modelo
+                    esAzul = !esAzul;
                 }
             });
         }
