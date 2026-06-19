@@ -21,7 +21,6 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# 🎨 DISEÑO FORMAL Y ACTUALIZACIÓN EN TIEMPO REAL AUTOMÁTICA
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -47,12 +46,11 @@ HTML_BASE = """
         .btn-baja:hover { background-color: #333333; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* BLOQUES INTERCALADOS */
         .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid #404040; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-        .titulo-modelo { font-size: 1.6rem; font-weight: bold; margin-bottom: 20px; padding-bottom: 6px; text-transform: uppercase; border-bottom: 2px solid #404040; }
+        .titulo-modelo { font-size: 1.4rem; font-weight: bold; margin-bottom: 20px; padding: 8px 15px; text-transform: uppercase; color: #ffffff; border-radius: 4px; }
         
-        .mod-azul .titulo-modelo { color: #1e3a8a; } 
-        .mod-rojo .titulo-modelo { color: #7f1d1d; } 
+        .mod-azul .titulo-modelo { background-color: #1e3a8a; } 
+        .mod-rojo .titulo-modelo { background-color: #7f1d1d; } 
         
         .bloque-estampado { margin-bottom: 25px; background-color: #1f1f1f; padding: 15px; border-radius: 4px; }
         .mod-azul .bloque-estampado { border-left: 5px solid #1e3a8a; }
@@ -131,10 +129,11 @@ HTML_BASE = """
                 let contenedor = document.getElementById('resultado_busqueda');
                 contenedor.innerHTML = '';
                 
+                // Agrupación de dos niveles estricta
                 let estructura = {};
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
-                    let est = p.estampado.toUpperCase().trim();
+                    let est = p.estampado.trim();
                     
                     if (!estructura[mod]) { estructura[mod] = {}; }
                     if (!estructura[mod][est]) { estructura[mod][est] = []; }
@@ -146,12 +145,12 @@ HTML_BASE = """
                 
                 for (let mod in estructura) {
                     let claseColor = esAzul ? 'mod-azul' : 'mod-rojo';
-                    let htmlBlock = `<div class="contenedor-modelo ${claseColor}"><div class="titulo-modelo">${mod}</div>`;
+                    let htmlBlock = `<div class="contenedor-modelo ${claseColor}"><div class="titulo-modelo">MODELO: ${mod}</div>`;
                     
                     for (let est in estructura[mod]) {
                         htmlBlock += `
                             <div class="bloque-estampado">
-                                <div class="titulo-estampado">${est}</div>
+                                <div class="titulo-estampado">${est.toUpperCase()}</div>
                                 <table class="tabla-catalogo">
                                     <thead>
                                         <tr>
@@ -191,9 +190,11 @@ HTML_BASE = """
             });
         }
         
-        // 🔄 AUTOMATIZACIÓN: Ejecuta la búsqueda inicial y luego repite cada 3 segundos en silencio
         buscarPrenda();
-        setInterval(buscarPrenda, 3000);
+        setInterval(function() {
+            if(document.getElementById('busqueda').value.trim()) { return; }
+            buscarPrenda();
+        }, 3000);
     </script>
 </body>
 </html>
