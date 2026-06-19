@@ -4,11 +4,7 @@ import os
 
 app = Flask(__name__)
 
-import os
-
 def conectar_bd():
-    # Si la app detecta que está en internet (Render), usa las variables de la nube.
-    # Si está en tu casa, usa tu XAMPP local por defecto.
     if "RENDER" in os.environ:
         return mysql.connector.connect(
             host=os.environ.get("DB_HOST"),
@@ -24,79 +20,67 @@ def conectar_bd():
             password="",
             database="gacrux_pos"
         )
-# 🎨 DISEÑO RESPONSIVO PARA MÓVILES (HTML5 + CSS3)
-# 🎨 DISEÑO INTELIGENTE HÍBRIDO (MÓVIL = 1 COLUMNA | PC = MULTI-COLUMNAS)
+
+# 🎨 NUEVO DISEÑO: TONOS GRISES, ACENTOS ROJOS Y TABLAS AGRUPADAS
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GACRUX - Almacén Inteligente</title>
+    <title>GACRUX - Panel de Almacén</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
-        body { background-color: #1e1e24; color: #fff; padding: 15px; }
-        header { text-align: center; margin-bottom: 20px; padding: 10px; background-color: #0288d1; border-radius: 8px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background-color: #1a1a1a; color: #e0e0e0; padding: 15px; }
+        header { text-align: center; margin-bottom: 25px; padding: 15px; background-color: #262626; border-radius: 6px; border-bottom: 3px solid #e63946; }
+        h2 { color: #ffffff; font-size: 1.6rem; letter-spacing: 1px; }
         
-        /* Contenedor principal adaptable */
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        .seccion { background-color: #262626; padding: 20px; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        h3 { margin-bottom: 15px; color: #ffffff; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.5px; }
         
-        .seccion { background-color: #2b2d42; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #3d405b; }
-        h3 { margin-bottom: 10px; color: #edf2f4; font-size: 1.1rem; }
-        input[type="text"] { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 1rem; margin-bottom: 10px; background-color: #fff; color: #333; }
+        input[type="text"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid #404040; font-size: 1rem; margin-bottom: 15px; background-color: #333333; color: #ffffff; }
+        input[type="text"]:focus { border-color: #e63946; outline: none; }
         
-        .btn { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; }
+        .btn { width: 100%; padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; transition: 0.2s; }
         .btn-baja { background-color: #e63946; }
-        #notificacion { text-align: center; margin-top: 10px; font-weight: bold; font-size: 0.95rem; }
+        .btn-baja:hover { background-color: #b91c1c; }
+        #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* 🔥 MAGIA AQUÍ: Contenedor en cuadrícula flexible */
-        .grid-prendas { 
-            display: grid; 
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
-            gap: 15px; 
-            margin-top: 10px; 
-        }
+        /* 📦 CONTENEDORES DE ESTAMPADOS */
+        .contenedor-estampado { background-color: #262626; border-radius: 6px; padding: 15px; margin-bottom: 25px; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .titulo-estampado { font-size: 1.3rem; font-weight: bold; color: #e63946; margin-bottom: 12px; border-bottom: 1px solid #404040; padding-bottom: 6px; text-transform: uppercase; }
         
-        /* Tarjetas compactas estilo catálogo */
-        .bloque-prenda { 
-            background-color: #fff; 
-            color: #333; 
-            padding: 12px; 
-            border-radius: 6px; 
-            border-left: 5px solid #0288d1;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
-        
-        .tabla-stock { width: 100%; margin-top: 8px; border-collapse: collapse; text-align: center; }
-        .tabla-stock th { background-color: #e2e8f0; font-size: 0.8rem; padding: 4px; color: #475569; }
-        .tabla-stock td { font-size: 0.95rem; font-weight: bold; padding: 6px; border: 1px solid #cbd5e1; color: #0f172a; }
+        /* 📊 TABLA COMPACTA ESTILO INDUSTRIAL */
+        .tabla-catalogo { width: 100%; border-collapse: collapse; margin-top: 5px; background-color: #1f1f1f; text-align: center; }
+        .tabla-catalogo th { background-color: #333333; color: #aaaaaa; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #404040; }
+        .tabla-catalogo td { padding: 10px; font-size: 1rem; border: 1px solid #404040; }
+        .col-modelo-color { text-align: left; font-weight: bold; color: #ffffff; width: 40%; padding-left: 15px !important; }
+        .stock-num { font-weight: bold; color: #ffffff; }
+        .stock-cero { color: #555555 !important; font-weight: normal; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h2>GACRUX POS 📱💻</h2>
-            <p style="font-size: 0.85rem;">Módulo de Ajustes de Almacén Universal</p>
+            <h2>GACRUX SYSTEM 🚀</h2>
+            <p style="font-size: 0.85rem; color: #888888; margin-top: 4px;">Control de Inventario Centralizado</p>
         </header>
 
-        <!-- 📦 MÓDULO DE BAJA RÁPIDA -->
+        <!-- 📦 AJUSTE DE STOCK -->
         <div class="seccion">
-            <h3>Ajuste Rápido (Pistola o Teclado)</h3>
-            <input type="text" id="codigo_barras" placeholder="Escribe o escanea código..." autocomplete="off">
-            <button class="btn btn-baja" onclick="procesarBaja()">📉 DESCONTAR 1 PIEZA</button>
+            <h3>Ajuste Rápido de Almacén</h3>
+            <input type="text" id="codigo_barras" placeholder="Escanea o escribe código de barras..." autocomplete="off">
+            <button class="btn btn-baja" onclick="procesarBaja()">📉 Descontar 1 Unidad</button>
             <div id="notificacion"></div>
         </div>
 
-        <!-- 🔍 CONSULTA DE EXISTENCIAS -->
+        <!-- 🔍 CATÁLOGO DINÁMICO AGRUPADO -->
         <div class="seccion">
-            <h3>Consultar Stock Real</h3>
-            <input type="text" id="busqueda" placeholder="Buscar estampado, modelo o color..." onkeyup="buscarPrenda()">
+            <h3>Existencias en Tiempo Real</h3>
+            <input type="text" id="busqueda" placeholder="Filtrar por estampado, modelo o color..." onkeyup="buscarPrenda()">
             
-            <!-- 🔥 Aquí se inyectan las tarjetas en la cuadrícula inteligente -->
-            <div id="resultado_busqueda" class="grid-prendas"></div>
+            <div id="resultado_busqueda"></div>
         </div>
     </div>
 
@@ -139,25 +123,52 @@ HTML_BASE = """
             .then(data => {
                 let contenedor = document.getElementById('resultado_busqueda');
                 contenedor.innerHTML = '';
+                
+                // Procesar los datos para agruparlos por Estampado en el navegador
+                let agrupado = {};
                 data.forEach(p => {
-                    contenedor.innerHTML += `
-                        <div class="bloque-prenda">
-                            <div>
-                                <div style="font-weight: bold; color: #0288d1; font-size: 0.85rem; text-transform: uppercase;">${p.modelo} - ${p.color}</div>
-                                <div style="font-size: 1rem; margin-top: 2px; font-weight: bold; color: #1e293b;">${p.estampado}</div>
-                            </div>
-                            <table class="tabla-stock">
-                                <tr><th>CH</th><th>M</th><th>G</th><th>EG</th></tr>
-                                <tr>
-                                    <td>${p.talla_ch}</td>
-                                    <td>${p.talla_m}</td>
-                                    <td>${p.talla_g}</td>
-                                    <td>${p.talla_eg}</td>
-                                </tr>
+                    let est = p.estampado.toUpperCase().strip ? p.estampado.toUpperCase().strip() : p.estampado.toUpperCase();
+                    if (!agrupado[est]) { agrupado[est] = []; }
+                    agrupado[est].push(p);
+                });
+                
+                // Generar las tablas por cada estampado existente
+                for (let est in agrupado) {
+                    let htmlEstampado = `
+                        <div class="contenedor-estampado">
+                            <div class="titulo-estampado">🎬 ${est}</div>
+                            <table class="tabla-catalogo">
+                                <thead>
+                                    <tr>
+                                        <th style="text-align: left; padding-left: 15px;">Modelo / Color</th>
+                                        <th style="width: 12%;">CH</th>
+                                        <th style="width: 12%;">M</th>
+                                        <th style="width: 12%;">G</th>
+                                        <th style="width: 12%;">EG</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
+                    
+                    agrupado[est].forEach(p => {
+                        htmlEstampado += `
+                            <tr>
+                                <td class="col-modelo-color">${p.modelo.toUpperCase()} — <span style="color: #888888; font-weight: normal;">${p.color}</span></td>
+                                <td class="stock-num ${p.talla_ch == 0 ? 'stock-cero' : ''}">${p.talla_ch}</td>
+                                <td class="stock-num ${p.talla_m == 0 ? 'stock-cero' : ''}">${p.talla_m}</td>
+                                <td class="stock-num ${p.talla_g == 0 ? 'stock-cero' : ''}">${p.talla_g}</td>
+                                <td class="stock-num ${p.talla_eg == 0 ? 'stock-cero' : ''}">${p.talla_eg}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    htmlEstampado += `
+                                </tbody>
                             </table>
                         </div>
                     `;
-                });
+                    contenedor.innerHTML += htmlEstampado;
+                }
             });
         }
         
@@ -180,9 +191,9 @@ def api_buscar():
     db = conectar_bd()
     cursor = db.cursor(dictionary=True)
     if q:
-        cursor.execute("SELECT * FROM panel_stock WHERE modelo LIKE %s OR estampado LIKE %s OR color LIKE %s", (f"%{q}%", f"%{q}%", f"%{q}%"))
+        cursor.execute("SELECT * FROM panel_stock WHERE modelo LIKE %s OR estampado LIKE %s OR color LIKE %s ORDER BY estampado ASC, modelo ASC", (f"%{q}%", f"%{q}%", f"%{q}%"))
     else:
-        cursor.execute("SELECT * FROM panel_stock")
+        cursor.execute("SELECT * FROM panel_stock ORDER BY estampado ASC, modelo ASC")
     resultados = cursor.fetchall()
     cursor.close()
     db.close()
@@ -233,4 +244,5 @@ def api_baja():
     return jsonify({'status': 'error', 'msg': 'Código de barras no válido.'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
