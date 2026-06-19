@@ -28,50 +28,74 @@ HTML_BASE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GACRUX - Panel de Almacén</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
-        body { background-color: #1a1a1a; color: #e0e0e0; padding: 15px; }
-        header { text-align: center; margin-bottom: 25px; padding: 15px; background-color: #262626; border-radius: 6px; border-bottom: 3px solid #444444; }
+    <style id="theme-style">
+        /* 🌙 MODO OSCURO (POR DEFECTO) */
+        :root {
+            --bg-body: #1a1a1a;
+            --bg-card: #262626;
+            --bg-block: #1f1f1f;
+            --bg-table: #161616;
+            --bg-th: #282828;
+            --text-color: #ffffff;
+            --subtext-color: #777777;
+            --border-color: #333333;
+            --input-bg: #333333;
+            --input-border: #404040;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; transition: background 0.2s, color 0.2s; }
+        body { background-color: var(--bg-body); color: var(--text-color); padding: 15px; }
+        
+        header { position: relative; text-align: center; margin-bottom: 25px; padding: 15px; background-color: var(--bg-card); border-radius: 6px; border-bottom: 3px solid #444444; }
         h2 { color: #ffffff; font-size: 1.6rem; letter-spacing: 1px; }
         
+        /* BOTÓN DE INTERRUPTOR DE TEMA */
+        .theme-toggle { position: absolute; top: 15px; right: 15px; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; background-color: #444444; color: white; }
+        
         .container { max-width: 1100px; margin: 0 auto; }
-        .seccion { background-color: #262626; padding: 20px; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .seccion { background-color: var(--bg-card); padding: 20px; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         h3 { margin-bottom: 15px; color: #ffffff; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.5px; }
         
-        input[type="text"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid #404040; font-size: 1rem; margin-bottom: 15px; background-color: #333333; color: #ffffff; }
+        input[type="text"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); font-size: 1rem; margin-bottom: 15px; background-color: var(--input-bg); color: var(--text-color); }
         input[type="text"]:focus { border-color: #888888; outline: none; }
         
-        .btn { width: 100%; padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; transition: 0.2s; }
+        .btn { width: 100%; padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; }
         .btn-baja { background-color: #444444; border: 1px solid #555555; }
-        .btn-baja:hover { background-color: #333333; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid #404040; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-        .titulo-modelo { font-size: 1.4rem; font-weight: bold; margin-bottom: 20px; padding: 8px 15px; text-transform: uppercase; color: #ffffff; border-radius: 4px; }
+        /* CONTENEDORES DE BLOQUES */
+        .contenedor-modelo { background-color: var(--bg-card); border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid var(--input-border); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
         
-        .mod-azul .titulo-modelo { background-color: #1e3a8a; } 
-        .mod-rojo .titulo-modelo { background-color: #7f1d1d; } 
+        .header-modelo-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px 15px; border-radius: 4px; color: #ffffff; }
+        .mod-azul .header-modelo-flex { background-color: #1e3a8a; }
+        .mod-rojo .header-modelo-flex { background-color: #7f1d1d; }
+        .titulo-modelo { font-size: 1.3rem; font-weight: bold; text-transform: uppercase; }
+        .total-modelo-top { font-size: 1.1rem; font-weight: bold; }
         
-        .bloque-estampado { margin-bottom: 25px; background-color: #1f1f1f; padding: 15px; border-radius: 4px; }
+        .bloque-estampado { margin-bottom: 25px; background-color: var(--bg-block); padding: 15px; border-radius: 4px; }
         .mod-azul .bloque-estampado { border-left: 5px solid #1e3a8a; }
         .mod-rojo .bloque-estampado { border-left: 5px solid #7f1d1d; }
         
-        .titulo-estampado { font-size: 1.2rem; font-weight: bold; color: #ffffff; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .titulo-estampado { font-size: 1.2rem; font-weight: bold; color: var(--text-color); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
         
-        .tabla-catalogo { width: 100%; border-collapse: collapse; text-align: center; background-color: #161616; }
-        .tabla-catalogo th { background-color: #282828; color: #999999; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #333333; }
-        .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid #333333; }
+        .tabla-catalogo { width: 100%; border-collapse: collapse; text-align: center; background-color: var(--bg-table); }
+        .tabla-catalogo th { background-color: var(--bg-th); color: #999999; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid var(--border-color); }
+        .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid var(--border-color); }
         
-        .col-color { text-align: left; font-weight: bold; color: #dddddd; padding-left: 15px !important; width: 45%; }
-        .stock-num { font-weight: bold; color: #ffffff; }
+        .col-color { text-align: left; font-weight: bold; color: var(--text-color); padding-left: 15px !important; width: 45%; }
+        .stock-num { font-weight: bold; color: var(--text-color); }
         .stock-cero { color: #3d3d3d !important; font-weight: normal; }
+        
+        /* 📊 FILA DE SUMAS ROJAS COMPATIBLE EXCEL */
+        .fila-totales-excel { width: 100%; padding: 8px 15px; background-color: var(--bg-block); font-size: 0.9rem; font-weight: bold; color: #e63946; border-top: 1px dashed #e63946; display: flex; justify-content: space-between; flex-wrap: wrap; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h2>SISTEMA GACRUX</h2>
-            <p style="font-size: 0.85rem; color: #777777; margin-top: 4px;">Control de Inventario Centralizado</p>
+            <p style="font-size: 0.85rem; color: var(--subtext-color); margin-top: 4px;">Control de Inventario Centralizado</p>
+            <button class="theme-toggle" onclick="alternarTemaWeb()">CAMBIAR TEMA ☀️</button>
         </header>
 
         <div class="seccion">
@@ -90,6 +114,40 @@ HTML_BASE = """
     </div>
 
     <script>
+        let modoOscuroActivo = true;
+
+        function alternarTemaWeb() {
+            modoOscuroActivo = !modoOscuroActivo;
+            const root = document.documentElement;
+            const btn = document.querySelector('.theme-toggle');
+            
+            if (modoOscuroActivo) {
+                btn.innerText = "CAMBIAR TEMA ☀️";
+                root.style.setProperty('--bg-body', '#1a1a1a');
+                root.style.setProperty('--bg-card', '#262626');
+                root.style.setProperty('--bg-block', '#1f1f1f');
+                root.style.setProperty('--bg-table', '#161616');
+                root.style.setProperty('--bg-th', '#282828');
+                root.style.setProperty('--text-color', '#ffffff');
+                root.style.setProperty('--subtext-color', '#777777');
+                root.style.setProperty('--border-color', '#333333');
+                root.style.setProperty('--input-bg', '#333333');
+                root.style.setProperty('--input-border', '#404040');
+            } else {
+                btn.innerText = "CAMBIAR TEMA 🌙";
+                root.style.setProperty('--bg-body', '#f4f6f9');
+                root.style.setProperty('--bg-card', '#ffffff');
+                root.style.setProperty('--bg-block', '#f8f9fa');
+                root.style.setProperty('--bg-table', '#ffffff');
+                root.style.setProperty('--bg-th', '#e2e8f0');
+                root.style.setProperty('--text-color', '#000000');
+                root.style.setProperty('--subtext-color', '#555555');
+                root.style.setProperty('--border-color', '#cbd5e1');
+                root.style.setProperty('--input-bg', '#ffffff');
+                root.style.setProperty('--input-border', '#cbd5e1');
+            }
+        }
+
         document.getElementById('codigo_barras').focus();
 
         function procesarBaja() {
@@ -143,8 +201,22 @@ HTML_BASE = """
                 let esAzul = true;
                 
                 for (let mod in estructura) {
+                    // Calcular el acumulado total sumando todos los estampados de este lote
+                    let totalLoteAcumulado = 0;
+                    for (let est_k in estructura[mod]) {
+                        estructura[mod][est_k].forEach(p => {
+                            totalLoteAcumulado += (p.talla_ch + p.talla_m + p.talla_g + p.talla_eg);
+                        });
+                    }
+
                     let claseColor = esAzul ? 'mod-azul' : 'mod-rojo';
-                    let htmlBlock = `<div class="contenedor-modelo ${claseColor}"><div class="titulo-modelo">${mod}</div>`;
+                    let htmlBlock = `
+                        <div class="contenedor-modelo ${claseColor}">
+                            <div class="header-modelo-flex">
+                                <div class="titulo-modelo">MODELO: ${mod}</div>
+                                <div class="total-modelo-top">TOTAL LOTE: ${totalLoteAcumulado} pzas</div>
+                            </div>
+                    `;
                     
                     for (let est in estructura[mod]) {
                         htmlBlock += `
@@ -163,7 +235,14 @@ HTML_BASE = """
                                     <tbody>
                         `;
                         
+                        let sumCH = 0, sumM = 0, sumG = 0, sumEG = 0;
+                        
                         estructura[mod][est].forEach(p => {
+                            sumCH += p.talla_ch;
+                            sumM += p.talla_m;
+                            sumG += p.talla_g;
+                            sumEG += p.talla_eg;
+
                             htmlBlock += `
                                 <tr>
                                     <td class="col-color">${p.color.toUpperCase()}</td>
@@ -175,9 +254,15 @@ HTML_BASE = """
                             `;
                         });
                         
+                        let sumaTotalTabla = sumCH + sumM + sumG + sumEG;
+
                         htmlBlock += `
                                     </tbody>
                                 </table>
+                                <div class="fila-totales-excel">
+                                    <div>CH: ${sumCH} &nbsp;|&nbsp; M: ${sumM} &nbsp;|&nbsp; G: ${sumG} &nbsp;|&nbsp; EG: ${sumEG}</div>
+                                    <div>SUMA TOTAL: ${sumaTotalTabla}</div>
+                                </div>
                             </div>
                         `;
                     }
