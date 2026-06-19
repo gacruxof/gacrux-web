@@ -21,7 +21,7 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# 🎨 DISEÑO FORMAL: GRISES, ACCENTOS ROJOS, MODELO ANTES DEL ESTAMPADO Y SIN EMOJIS
+# 🎨 DISEÑO ESTRUCTURADO EN CASCADA: MODELO -> ESTAMPADO -> TABLA DE COLORES
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -47,17 +47,21 @@ HTML_BASE = """
         .btn-baja:hover { background-color: #b91c1c; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* CONTENEDORES DE MODELOS */
-        .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 15px; margin-bottom: 25px; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        .titulo-modelo { font-size: 1.3rem; font-weight: bold; color: #e63946; margin-bottom: 12px; border-bottom: 1px solid #404040; padding-bottom: 6px; text-transform: uppercase; }
+        /* BLOQUES PRINCIPALES */
+        .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 20px; margin-bottom: 30px; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .titulo-modelo { font-size: 1.5rem; font-weight: bold; color: #ffffff; margin-bottom: 20px; padding-bottom: 4px; text-transform: uppercase; border-bottom: 2px solid #404040; }
         
-        /* TABLA INDUSTRIAL COMPACTA */
-        .tabla-catalogo { width: 100%; border-collapse: collapse; margin-top: 5px; background-color: #1f1f1f; text-align: center; }
-        .tabla-catalogo th { background-color: #333333; color: #aaaaaa; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #404040; }
-        .tabla-catalogo td { padding: 10px; font-size: 1rem; border: 1px solid #404040; }
-        .col-detalles { text-align: left; font-weight: bold; color: #ffffff; width: 45%; padding-left: 15px !important; }
+        /* SECCIONES DE ESTAMPADOS */
+        .bloque-estampado { margin-bottom: 20px; background-color: #202020; padding: 15px; border-radius: 4px; border-left: 4px solid #e63946; }
+        .titulo-estampado { font-size: 1.15rem; font-weight: bold; color: #e63946; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        /* TABLAS INDUSTRIALES COMPACTAS */
+        .tabla-catalogo { width: 100%; border-collapse: collapse; background-color: #1a1a1a; text-align: center; }
+        .tabla-catalogo th { background-color: #2d2d2d; color: #aaaaaa; font-size: 0.8rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #3a3a3a; }
+        .tabla-catalogo td { padding: 8px 10px; font-size: 0.95rem; border: 1px solid #3a3a3a; }
+        .col-color { text-align: left; font-weight: bold; color: #ffffff; padding-left: 15px !important; }
         .stock-num { font-weight: bold; color: #ffffff; }
-        .stock-cero { color: #555555 !important; font-weight: normal; }
+        .stock-cero { color: #444444 !important; font-weight: normal; }
     </style>
 </head>
 <body>
@@ -122,50 +126,61 @@ HTML_BASE = """
                 let contenedor = document.getElementById('resultado_busqueda');
                 contenedor.innerHTML = '';
                 
-                // Agrupar los datos por MODELO (ej. SUDADERA, PLAYERA)
-                let agrupado = {};
+                // 1. Agrupación de dos niveles en JavaScript: Modelo -> Estampado
+                let estructura = {};
+                
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
-                    if (!agrupado[mod]) { agrupado[mod] = []; }
-                    agrupado[mod].push(p);
+                    let est = p.estampado.toUpperCase().trim();
+                    
+                    if (!estructura[mod]) { estructura[mod] = {}; }
+                    if (!estructura[mod][est]) { estructura[mod][est] = []; }
+                    
+                    estructura[mod][est].push(p);
                 });
                 
-                // Armar las tablas agrupadas por tipo de prenda
-                for (let mod in agrupado) {
-                    let htmlModelo = `
-                        <div class="contenedor-modelo">
-                            <div class="titulo-modelo">${mod}</div>
-                            <table class="tabla-catalogo">
-                                <thead>
-                                    <tr>
-                                        <th style="text-align: left; padding-left: 15px;">Estampado / Color</th>
-                                        <th style="width: 12%;">CH</th>
-                                        <th style="width: 12%;">M</th>
-                                        <th style="width: 12%;">G</th>
-                                        <th style="width: 12%;">EG</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                    `;
+                // 2. Construcción del HTML jerárquico limpio
+                for (let mod in estructura) {
+                    let htmlBlock = `<div class="contenedor-modelo"><div class="titulo-modelo">${mod}</div>`;
                     
-                    agrupado[mod].forEach(p => {
-                        htmlModelo += `
-                            <tr>
-                                <td class="col-detalles">${p.estampado} — <span style="color: #888888; font-weight: normal; font-size: 0.9rem;">${p.color}</span></td>
-                                <td class="stock-num ${p.talla_ch == 0 ? 'stock-cero' : ''}">${p.talla_ch}</td>
-                                <td class="stock-num ${p.talla_m == 0 ? 'stock-cero' : ''}">${p.talla_m}</td>
-                                <td class="stock-num ${p.talla_g == 0 ? 'stock-cero' : ''}">${p.talla_g}</td>
-                                <td class="stock-num ${p.talla_eg == 0 ? 'stock-cero' : ''}">${p.talla_eg}</td>
-                            </tr>
+                    for (let est in estructura[mod]) {
+                        htmlBlock += `
+                            <div class="bloque-estampado">
+                                <div class="titulo-estampado">${est}</div>
+                                <table class="tabla-catalogo">
+                                    <thead>
+                                        <tr>
+                                            <th style="text-align: left; padding-left: 15px;">Color</th>
+                                            <th style="width: 12%;">CH</th>
+                                            <th style="width: 12%;">M</th>
+                                            <th style="width: 12%;">G</th>
+                                            <th style="width: 12%;">EG</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
                         `;
-                    });
+                        
+                        estructura[mod][est].forEach(p => {
+                            htmlBlock += `
+                                <tr>
+                                    <td class="col-color">${p.color.toUpperCase()}</td>
+                                    <td class="stock-num ${p.talla_ch == 0 ? 'stock-cero' : ''}">${p.talla_ch}</td>
+                                    <td class="stock-num ${p.talla_m == 0 ? 'stock-cero' : ''}">${p.talla_m}</td>
+                                    <td class="stock-num ${p.talla_g == 0 ? 'stock-cero' : ''}">${p.talla_g}</td>
+                                    <td class="stock-num ${p.talla_eg == 0 ? 'stock-cero' : ''}">${p.talla_eg}</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        htmlBlock += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                    }
                     
-                    htmlModelo += `
-                                </tbody>
-                            </table>
-                        </div>
-                    `;
-                    contenedor.innerHTML += htmlModelo;
+                    htmlBlock += `</div>`;
+                    contenedor.innerHTML += htmlBlock;
                 }
             });
         }
@@ -186,9 +201,9 @@ def api_buscar():
     db = conectar_bd()
     cursor = db.cursor(dictionary=True)
     if q:
-        cursor.execute("SELECT * FROM panel_stock WHERE modelo LIKE %s OR estampado LIKE %s OR color LIKE %s ORDER BY modelo ASC, estampado ASC", (f"%{q}%", f"%{q}%", f"%{q}%"))
+        cursor.execute("SELECT * FROM panel_stock WHERE modelo LIKE %s OR estampado LIKE %s OR color LIKE %s ORDER BY modelo ASC, estampado ASC, color ASC", (f"%{q}%", f"%{q}%", f"%{q}%"))
     else:
-        cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC")
+        cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
     resultados = cursor.fetchall()
     cursor.close()
     db.close()
