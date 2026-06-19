@@ -21,7 +21,7 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# 🎨 NUEVO DISEÑO: TONOS GRISES, ACENTOS ROJOS Y TABLAS AGRUPADAS
+# 🎨 DISEÑO FORMAL: GRISES, ACCENTOS ROJOS, MODELO ANTES DEL ESTAMPADO Y SIN EMOJIS
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -47,15 +47,15 @@ HTML_BASE = """
         .btn-baja:hover { background-color: #b91c1c; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* 📦 CONTENEDORES DE ESTAMPADOS */
-        .contenedor-estampado { background-color: #262626; border-radius: 6px; padding: 15px; margin-bottom: 25px; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        .titulo-estampado { font-size: 1.3rem; font-weight: bold; color: #e63946; margin-bottom: 12px; border-bottom: 1px solid #404040; padding-bottom: 6px; text-transform: uppercase; }
+        /* CONTENEDORES DE MODELOS */
+        .contenedor-modelo { background-color: #262626; border-radius: 6px; padding: 15px; margin-bottom: 25px; border: 1px solid #404040; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .titulo-modelo { font-size: 1.3rem; font-weight: bold; color: #e63946; margin-bottom: 12px; border-bottom: 1px solid #404040; padding-bottom: 6px; text-transform: uppercase; }
         
-        /* 📊 TABLA COMPACTA ESTILO INDUSTRIAL */
+        /* TABLA INDUSTRIAL COMPACTA */
         .tabla-catalogo { width: 100%; border-collapse: collapse; margin-top: 5px; background-color: #1f1f1f; text-align: center; }
         .tabla-catalogo th { background-color: #333333; color: #aaaaaa; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid #404040; }
         .tabla-catalogo td { padding: 10px; font-size: 1rem; border: 1px solid #404040; }
-        .col-modelo-color { text-align: left; font-weight: bold; color: #ffffff; width: 40%; padding-left: 15px !important; }
+        .col-detalles { text-align: left; font-weight: bold; color: #ffffff; width: 45%; padding-left: 15px !important; }
         .stock-num { font-weight: bold; color: #ffffff; }
         .stock-cero { color: #555555 !important; font-weight: normal; }
     </style>
@@ -63,32 +63,30 @@ HTML_BASE = """
 <body>
     <div class="container">
         <header>
-            <h2>GACRUX SYSTEM 🚀</h2>
+            <h2>SISTEMA GACRUX</h2>
             <p style="font-size: 0.85rem; color: #888888; margin-top: 4px;">Control de Inventario Centralizado</p>
         </header>
 
-        <!-- 📦 AJUSTE DE STOCK -->
         <div class="seccion">
             <h3>Ajuste Rápido de Almacén</h3>
-            <input type="text" id="codigo_barras" placeholder="Escanea o escribe código de barras..." autocomplete="off">
-            <button class="btn btn-baja" onclick="procesarBaja()">📉 Descontar 1 Unidad</button>
+            <input type="text" id="codigo_barres" placeholder="Escanea o escribe código de barras..." autocomplete="off">
+            <button class="btn btn-baja" onclick="procesarBaja()">Descontar 1 Unidad</button>
             <div id="notificacion"></div>
         </div>
 
-        <!-- 🔍 CATÁLOGO DINÁMICO AGRUPADO -->
         <div class="seccion">
             <h3>Existencias en Tiempo Real</h3>
-            <input type="text" id="busqueda" placeholder="Filtrar por estampado, modelo o color..." onkeyup="buscarPrenda()">
+            <input type="text" id="busqueda" placeholder="Filtrar por modelo, estampado o color..." onkeyup="buscarPrenda()">
             
             <div id="resultado_busqueda"></div>
         </div>
     </div>
 
     <script>
-        document.getElementById('codigo_barras').focus();
+        document.getElementById('codigo_barres').focus();
 
         function procesarBaja() {
-            let codigo = document.getElementById('codigo_barras').value.trim();
+            let codigo = document.getElementById('codigo_barres').value.trim();
             if(!codigo) return;
             
             fetch('/api/baja', {
@@ -101,18 +99,18 @@ HTML_BASE = """
                 let notif = document.getElementById('notificacion');
                 if(data.status === 'ok') {
                     notif.style.color = '#4caf50';
-                    notif.innerText = "✅ " + data.msg;
+                    notif.innerText = "COINCIDENCIA: " + data.msg;
                     buscarPrenda();
                 } else {
                     notif.style.color = '#e63946';
-                    notif.innerText = "❌ " + data.msg;
+                    notif.innerText = "ERROR: " + data.msg;
                 }
-                document.getElementById('codigo_barras').value = '';
-                document.getElementById('codigo_barras').focus();
+                document.getElementById('codigo_barres').value = '';
+                document.getElementById('codigo_barres').focus();
             });
         }
 
-        document.getElementById('codigo_barras').addEventListener('keypress', function(e) {
+        document.getElementById('codigo_barres').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') { procesarBaja(); }
         });
 
@@ -124,23 +122,23 @@ HTML_BASE = """
                 let contenedor = document.getElementById('resultado_busqueda');
                 contenedor.innerHTML = '';
                 
-                // Procesar los datos para agruparlos por Estampado en el navegador
+                // Agrupar los datos por MODELO (ej. SUDADERA, PLAYERA)
                 let agrupado = {};
                 data.forEach(p => {
-                    let est = p.estampado.toUpperCase().strip ? p.estampado.toUpperCase().strip() : p.estampado.toUpperCase();
-                    if (!agrupado[est]) { agrupado[est] = []; }
-                    agrupado[est].push(p);
+                    let mod = p.modelo.toUpperCase().trim();
+                    if (!agrupado[mod]) { agrupado[mod] = []; }
+                    agrupado[mod].push(p);
                 });
                 
-                // Generar las tablas por cada estampado existente
-                for (let est in agrupado) {
-                    let htmlEstampado = `
-                        <div class="contenedor-estampado">
-                            <div class="titulo-estampado">🎬 ${est}</div>
+                // Armar las tablas agrupadas por tipo de prenda
+                for (let mod in agrupado) {
+                    let htmlModelo = `
+                        <div class="contenedor-modelo">
+                            <div class="titulo-modelo">${mod}</div>
                             <table class="tabla-catalogo">
                                 <thead>
                                     <tr>
-                                        <th style="text-align: left; padding-left: 15px;">Modelo / Color</th>
+                                        <th style="text-align: left; padding-left: 15px;">Estampado / Color</th>
                                         <th style="width: 12%;">CH</th>
                                         <th style="width: 12%;">M</th>
                                         <th style="width: 12%;">G</th>
@@ -150,10 +148,10 @@ HTML_BASE = """
                                 <tbody>
                     `;
                     
-                    agrupado[est].forEach(p => {
-                        htmlEstampado += `
+                    agrupado[mod].forEach(p => {
+                        htmlModelo += `
                             <tr>
-                                <td class="col-modelo-color">${p.modelo.toUpperCase()} — <span style="color: #888888; font-weight: normal;">${p.color}</span></td>
+                                <td class="col-detalles">${p.estampado} — <span style="color: #888888; font-weight: normal; font-size: 0.9rem;">${p.color}</span></td>
                                 <td class="stock-num ${p.talla_ch == 0 ? 'stock-cero' : ''}">${p.talla_ch}</td>
                                 <td class="stock-num ${p.talla_m == 0 ? 'stock-cero' : ''}">${p.talla_m}</td>
                                 <td class="stock-num ${p.talla_g == 0 ? 'stock-cero' : ''}">${p.talla_g}</td>
@@ -162,12 +160,12 @@ HTML_BASE = """
                         `;
                     });
                     
-                    htmlEstampado += `
+                    htmlModelo += `
                                 </tbody>
                             </table>
                         </div>
                     `;
-                    contenedor.innerHTML += htmlEstampado;
+                    contenedor.innerHTML += htmlModelo;
                 }
             });
         }
@@ -178,9 +176,6 @@ HTML_BASE = """
 </html>
 """
 
-# =========================================================================
-# RUTAS DEL SERVIDOR WEB
-# =========================================================================
 @app.route('/')
 def index():
     return render_template_string(HTML_BASE)
@@ -191,9 +186,9 @@ def api_buscar():
     db = conectar_bd()
     cursor = db.cursor(dictionary=True)
     if q:
-        cursor.execute("SELECT * FROM panel_stock WHERE modelo LIKE %s OR estampado LIKE %s OR color LIKE %s ORDER BY estampado ASC, modelo ASC", (f"%{q}%", f"%{q}%", f"%{q}%"))
+        cursor.execute("SELECT * FROM panel_stock WHERE modelo LIKE %s OR estampado LIKE %s OR color LIKE %s ORDER BY modelo ASC, estampado ASC", (f"%{q}%", f"%{q}%", f"%{q}%"))
     else:
-        cursor.execute("SELECT * FROM panel_stock ORDER BY estampado ASC, modelo ASC")
+        cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC")
     resultados = cursor.fetchall()
     cursor.close()
     db.close()
@@ -234,7 +229,7 @@ def api_baja():
             cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual))
             db.commit()
             
-            msg = f"Descontado: {prenda['modelo']} - {prenda['talla']} ({prenda['color']})"
+            msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
             cursor.close()
             db.close()
             return jsonify({'status': 'ok', 'msg': msg})
