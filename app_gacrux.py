@@ -5,12 +5,12 @@ import os
 import datetime
 
 app = Flask(__name__)
-app.secret_key = 'CLAVE_SECRETA_GACRUX_ALBERTO_2026' # 🔑 Llave para encriptar las sesiones en los celulares
+app.secret_key = 'CLAVE_SECRETA_GACRUX_ALBERTO_2026' # 🔑 Encripta de forma segura las sesiones en celulares
 
-# Configuración del sistema de seguridad de accesos
+# Configuración del sistema de seguridad de accesos web
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login' # Redirige aquí si intentan espiar sin iniciar sesión
+login_manager.login_view = 'login' 
 
 def conectar_bd():
     if "RENDER" in os.environ:
@@ -29,29 +29,30 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# Clase de usuario para que Flask rastree quién está navegando en el celular
+# Clase de usuario para rastrear Sesión y Rol en el navegador
 class UsuarioWeb(UserMixin):
-    def __init__(self, id_user, usuario, nombre_real):
+    def __init__(self, id_user, usuario, nombre_real, rol_puesto):
         self.id = id_user
         self.usuario = usuario
         self.nombre_real = nombre_real
+        self.rol_puesto = rol_puesto # 🧠 Guarda el puesto asignado en la nube
 
 @login_manager.user_loader
 def load_user(user_id):
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT id, usuario, nombre_real FROM usuarios_gacrux WHERE id = %s", (user_id,))
+        cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE id = %s", (user_id,))
         res = cursor.fetchone()
         cursor.close()
         db.close()
         if res:
-            return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'])
+            return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'], res['rol_puesto'])
     except:
         pass
     return None
 
-# 🔒 PANTALLA DE INICIO DE SESIÓN WEB AMIGABLE PARA CELULARES
+# 🔒 PANTALLA DE LOGO CON EL OJITO DE CONTRASEÑA ADAPTADO PARA MÓVILES
 HTML_LOGIN = """
 <!DOCTYPE html>
 <html lang="es">
@@ -64,10 +65,13 @@ HTML_LOGIN = """
         .login-box { background: #1e1e24; padding: 35px 30px; border-radius: 8px; width: 90%; max-width: 360px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-bottom: 3px solid #1e3a8a; }
         h2 { font-size: 1.5rem; margin-bottom: 5px; letter-spacing: 1px; }
         p { color: #888; font-size: 0.9rem; margin-bottom: 25px; }
-        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #333; background: #26262b; color: white; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
+        .input-group { position: relative; width: 100%; margin: 8px 0; }
+        input { width: 100%; padding: 12px; border: 1px solid #333; background: #26262b; color: white; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
         input:focus { border-color: #1e3a8a; outline: none; }
-        button { width: 100%; padding: 12px; background: #1e3a8a; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 1rem; text-transform: uppercase; }
-        button:hover { background: #1d4ed8; }
+        .input-group input { padding-right: 45px; }
+        .btn-ojo { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #888; cursor: pointer; font-size: 1.1rem; padding: 5px; }
+        button[type="submit"] { width: 100%; padding: 12px; background: #1e3a8a; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 1rem; text-transform: uppercase; }
+        button[type="submit"]:hover { background: #1d4ed8; }
         .error { color: #ff4a4a; font-size: 0.9rem; margin-top: 15px; font-weight: bold; }
     </style>
 </head>
@@ -76,8 +80,13 @@ HTML_LOGIN = """
         <h2>SISTEMA GACRUX</h2>
         <p>Control de Almacén en Línea</p>
         <form method="POST">
-            <input type="text" name="usuario" placeholder="Usuario" required autocomplete="off">
-            <input type="password" name="password" placeholder="Contraseña" required>
+            <div class="input-group">
+                <input type="text" name="usuario" placeholder="Usuario" required autocomplete="off">
+            </div>
+            <div class="input-group">
+                <input type="password" id="password" name="password" placeholder="Contraseña" required>
+                <button type="button" class="btn-ojo" onclick="toggleOjoWeb()">👁️</button>
+            </div>
             <button type="submit">ENTRAR 🔓</button>
         </form>
         {% with messages = get_flashed_messages() %}
@@ -88,11 +97,25 @@ HTML_LOGIN = """
           {% endif %}
         {% endwith %}
     </div>
+
+    <script>
+        function toggleOjoWeb() {
+            const labelPass = document.getElementById('password');
+            const btnOjo = document.querySelector('.btn-ojo');
+            if (labelPass.type === 'password') {
+                labelPass.type = 'text';
+                btnOjo.style.color = '#1e3a8a';
+            } else {
+                labelPass.type = 'password';
+                btnOjo.style.color = '#888';
+            }
+        }
+    </script>
 </body>
 </html>
 """
 
-# 🎨 DISEÑO WEB ADAPTATIVO INTELIGENTE (TU INTERFAZ ORIGINAL CON RASTREO)
+# 🎨 DISEÑO WEB PRINCIPAL CON INTEGRACIÓN DE ROLES DINÁMICOS
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -101,7 +124,6 @@ HTML_BASE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GACRUX - Panel de Almacén</title>
     <style id="theme-style">
-        /* 🌙 MODO OSCURO (POR DEFECTO) */
         :root {
             --bg-body: #1a1a1a;
             --bg-card: #262626;
@@ -158,8 +180,8 @@ HTML_BASE = """
         
         .fila-totales-excel { width: 100%; padding: 8px 15px; background-color: var(--bg-block); font-size: 0.9rem; font-weight: bold; color: #e63946; border-top: 1px dashed #e63946; display: flex; justify-content: space-between; flex-wrap: wrap; }
         
-        .user-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 0.85rem; color: var(--subtext-color); border-top: 1px solid var(--border-color); padding-top: 12px; }
-        .logout-link { color: #e63946; font-weight: bold; text-decoration: none; }
+        .user-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 0.85rem; color: var(--subtext-color); border-top: 1px solid var(--border-color); padding-top: 12px; flex-wrap: wrap; gap: 10px; }
+        .logout-link { color: #ef233c; font-weight: bold; text-decoration: none; border: 1px solid #ef233c; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
     </style>
 </head>
 <body>
@@ -184,8 +206,8 @@ HTML_BASE = """
             <div id="resultado_busqueda"></div>
             
             <div class="user-footer">
-                <div>👤 Sesión activa: <strong>{{ empleado }}</strong></div>
-                <div><a class="logout-link" href="/logout">CERRAR SESIÓN 🚪</a></div>
+                <div>👤 SESIÓN: <strong>{{ empleado }}</strong> &nbsp;|&nbsp; PUESTO: <span style="color: #1e3a8a; font-weight: bold;">{{ puesto }}</span></div>
+                <div><a class="logout-link" href="/logout">Cerrar Sesión 🚪</a></div>
             </div>
         </div>
     </div>
@@ -367,7 +389,7 @@ HTML_BASE = """
 </html>
 """
 
-# 🔑 ACCESO AL LOGIN DESDE EL NAVEGADOR
+# 🔑 MANEJO DE INICIO DE SESIÓN WEB
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -377,13 +399,14 @@ def login():
         try:
             db = conectar_bd()
             cursor = db.cursor(dictionary=True)
-            cursor.execute("SELECT id, usuario, nombre_real FROM usuarios_gacrux WHERE usuario = %s AND password = %s", (user_input, pass_input))
+            # Jalamos también el rol_puesto asignado desde internet
+            cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE usuario = %s AND password = %s", (user_input, pass_input))
             validado = cursor.fetchone()
             cursor.close()
             db.close()
             
             if validado:
-                user_obj = UsuarioWeb(validado['id'], validado['usuario'], validado['nombre_real'])
+                user_obj = UsuarioWeb(validado['id'], validado['usuario'], validado['nombre_real'], validado['rol_puesto'])
                 login_user(user_obj)
                 return redirect(url_for('index'))
             else:
@@ -393,11 +416,11 @@ def login():
             
     return render_template_string(HTML_LOGIN)
 
-# 👑 RUTA PRINCIPAL PROTEGIDA CON CONTRASEÑA
+# 👑 RUTA PRINCIPAL PROTEGIDA CON RENDERIZADO DE ROL
 @app.route('/')
 @login_required
 def index():
-    return render_template_string(HTML_BASE, empleado=current_user.nombre_real)
+    return render_template_string(HTML_BASE, empleado=current_user.nombre_real.upper(), puesto=current_user.rol_puesto.upper())
 
 @app.route('/api/buscar')
 @login_required
@@ -443,7 +466,7 @@ def api_baja():
             fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             precio_p = float(prenda['precio'])
             
-            # 📝 SE AUDITA AUTOMÁTICAMENTE EL EMPLEADO QUE DESTRABÓ LA SESIÓN WEB
+            # Se estampa de forma transparente qué operario web firmó el descuento desde su celular
             sql_h = """
                 INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
                 VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
@@ -460,7 +483,7 @@ def api_baja():
     db.close()
     return jsonify({'status': 'error', 'msg': 'Código de barras no válido.'})
 
-# 🚪 RUTA PARA SALIR DE LA SESIÓN WEB
+# 🚪 RUTA PARA LOGOUT DEL NAVEGADOR MÓVIL
 @app.route('/logout')
 @login_required
 def logout():
