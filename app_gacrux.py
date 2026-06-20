@@ -5,9 +5,8 @@ import os
 import datetime
 
 app = Flask(__name__)
-app.secret_key = 'CLAVE_SECRETA_GACRUX_ALBERTO_2026' # 🔑 Encripta de forma segura las sesiones en celulares
+app.secret_key = 'CLAVE_SECRETA_GACRUX_ALBERTO_2026'
 
-# Configuración del sistema de seguridad de accesos web
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login' 
@@ -29,13 +28,12 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# Clase de usuario para rastrear Sesión y Rol en el navegador
 class UsuarioWeb(UserMixin):
     def __init__(self, id_user, usuario, nombre_real, rol_puesto):
         self.id = id_user
         self.usuario = usuario
         self.nombre_real = nombre_real
-        self.rol_puesto = rol_puesto # 🧠 Guarda el puesto asignado en la nube
+        self.rol_puesto = rol_puesto
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -52,7 +50,6 @@ def load_user(user_id):
         pass
     return None
 
-# 🔒 PANTALLA DE LOGO CON EL OJITO DE CONTRASEÑA ADAPTADO PARA MÓVILES
 HTML_LOGIN = """
 <!DOCTYPE html>
 <html lang="es">
@@ -115,7 +112,7 @@ HTML_LOGIN = """
 </html>
 """
 
-# 🎨 DISEÑO WEB PRINCIPAL CON INTEGRACIÓN DE ROLES DINÁMICOS
+# 🎨 CUADRÍCULA INTERACTIVA CON EDICIÓN WEB MAESTRA HABILITADA
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -175,11 +172,15 @@ HTML_BASE = """
         .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid var(--border-color); }
         
         .col-color { text-align: left; font-weight: bold; color: var(--text-color); padding-left: 15px !important; }
+        
+        /* 👑 ESTILOS EXCLUSIVOS PARA CELDAS EDITABLES */
         .stock-num { font-weight: bold; color: var(--text-color); }
+        .editable { cursor: pointer; background-color: rgba(30, 58, 138, 0.1); border-radius: 3px; position: relative; }
+        .editable:hover { background-color: rgba(30, 58, 138, 0.3); color: #4ea8de; }
+        .input-inline-edit { width: 50px; text-align: center; background: #333; color: white; border: 1px solid #1e3a8a; border-radius: 3px; font-weight: bold; font-size: 1rem; padding: 2px 0; }
+        
         .stock-cero { color: #3d3d3d !important; font-weight: normal; }
-        
         .fila-totales-excel { width: 100%; padding: 8px 15px; background-color: var(--bg-block); font-size: 0.9rem; font-weight: bold; color: #e63946; border-top: 1px dashed #e63946; display: flex; justify-content: space-between; flex-wrap: wrap; }
-        
         .user-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 0.85rem; color: var(--subtext-color); border-top: 1px solid var(--border-color); padding-top: 12px; flex-wrap: wrap; gap: 10px; }
         .logout-link { color: #ef233c; font-weight: bold; text-decoration: none; border: 1px solid #ef233c; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
     </style>
@@ -214,6 +215,7 @@ HTML_BASE = """
 
     <script>
         let modoOscuroActivo = true;
+        const esAdmin = "{{ es_admin }}" === "True"; // 🧠 Detecta si el cliente web es Alberto
 
         function alternarTemaWeb() {
             modoOscuroActivo = !modoOscuroActivo;
@@ -278,7 +280,53 @@ HTML_BASE = """
             if (e.key === 'Enter') { procesarBaja(); }
         });
 
+        // 🧠 FUNCIÓN MAESTRA: Activa la edición en línea al tocar un stock
+        function activarEdicionCelda(elemento, dbId, columnaSql) {
+            if (!esAdmin || elemento.querySelector('input')) return; // Candado de seguridad
+            
+            let valorActual = elemento.innerText.trim();
+            elemento.innerHTML = `<input type="number" class="input-inline-edit" value="${valorActual}" min="0">`;
+            let input = elemento.querySelector('input');
+            input.focus();
+            input.select();
+            
+            function guardarCambioInmediato() {
+                let nuevoValor = input.value.trim();
+                if (nuevoValor === "" || isNaN(nuevoValor) || parseInt(nuevoValor) < 0) {
+                    elemento.innerHTML = valorActual;
+                    return;
+                }
+                
+                if (parseInt(nuevoValor) === parseInt(valorActual)) {
+                    elemento.innerHTML = nuevoValor;
+                    return;
+                }
+                
+                elemento.innerHTML = "...";
+                
+                fetch('/api/guardar_stock_web', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: dbId, columna: columnaSql, valor: parseInt(nuevoValor)})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        buscarPrenda(); // Recalcula totales dinámicos
+                    } else {
+                        alert("Error al inyectar cambio: " + data.msg);
+                        elemento.innerHTML = valorActual;
+                    }
+                });
+            }
+            
+            input.addEventListener('keypress', function(e) { if (e.key === 'Enter') { guardarCambioInmediato(); } });
+            input.addEventListener('focusout', guardarCambioInmediato);
+        }
+
         function buscarPrenda() {
+            if (document.querySelector('.input-inline-edit')) return; // No interrumpe si estás escribiendo un número
+            
             let query = document.getElementById('busqueda').value;
             fetch('/api/buscar?q=' + query)
             .then(res => res.json())
@@ -342,13 +390,16 @@ HTML_BASE = """
                         `;
                         
                         estructura[mod][est].forEach(p => {
+                            // Inyecta dinámicamente la clase 'editable' y la llamada onclick si eres Alberto
+                            let claseEditable = esAdmin ? 'editable' : '';
+                            
                             htmlBlock += `
                                 <tr>
                                     <td class="col-color">${p.color.toUpperCase()}</td>
-                                    ${sumCH > 0 ? `<td class="stock-num ${p.talla_ch == 0 ? 'stock-cero' : ''}">${p.talla_ch}</td>` : ''}
-                                    ${sumM > 0 ? `<td class="stock-num ${p.talla_m == 0 ? 'stock-cero' : ''}">${p.talla_m}</td>` : ''}
-                                    ${sumG > 0 ? `<td class="stock-num ${p.talla_g == 0 ? 'stock-cero' : ''}">${p.talla_g}</td>` : ''}
-                                    ${sumEG > 0 ? `<td class="stock-num ${p.talla_eg == 0 ? 'stock-cero' : ''}">${p.talla_eg}</td>` : ''}
+                                    ${sumCH > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_ch == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ch')">${p.talla_ch}</td>` : ''}
+                                    ${sumM > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_m == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_m')">${p.talla_m}</td>` : ''}
+                                    ${sumG > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_g == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_g')">${p.talla_g}</td>` : ''}
+                                    ${sumEG > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_eg == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_eg')">${p.talla_eg}</td>` : ''}
                                 </tr>
                             `;
                         });
@@ -381,7 +432,7 @@ HTML_BASE = """
         
         buscarPrenda();
         setInterval(function() {
-            if(document.getElementById('busqueda').value.trim()) { return; }
+            if(document.getElementById('busqueda').value.trim() || document.querySelector('.input-inline-edit')) { return; }
             buscarPrenda();
         }, 3000);
     </script>
@@ -389,7 +440,6 @@ HTML_BASE = """
 </html>
 """
 
-# 🔑 MANEJO DE INICIO DE SESIÓN WEB
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -399,7 +449,6 @@ def login():
         try:
             db = conectar_bd()
             cursor = db.cursor(dictionary=True)
-            # Jalamos también el rol_puesto asignado desde internet
             cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE usuario = %s AND password = %s", (user_input, pass_input))
             validado = cursor.fetchone()
             cursor.close()
@@ -416,11 +465,12 @@ def login():
             
     return render_template_string(HTML_LOGIN)
 
-# 👑 RUTA PRINCIPAL PROTEGIDA CON RENDERIZADO DE ROL
 @app.route('/')
 @login_required
 def index():
-    return render_template_string(HTML_BASE, empleado=current_user.nombre_real.upper(), puesto=current_user.rol_puesto.upper())
+    # 🧠 Pasamos la validación es_admin al HTML (True si es tu cuenta)
+    es_jefe = (current_user.usuario == "alberto")
+    return render_template_string(HTML_BASE, empleado=current_user.nombre_real.upper(), puesto=current_user.rol_puesto.upper(), es_admin=es_jefe)
 
 @app.route('/api/buscar')
 @login_required
@@ -436,6 +486,54 @@ def api_buscar():
     cursor.close()
     db.close()
     return jsonify(resultados)
+
+# 👑 ENDPOINT EXCLUSIVO: Procesa la edición manual desde el celular de Alberto
+@app.route('/api/guardar_stock_web', methods=['POST'])
+@login_required
+def api_guardar_stock_web():
+    if current_user.usuario != "alberto":
+        return jsonify({'status': 'error', 'msg': 'Privilegios insuficientes.'})
+        
+    data = request.get_json()
+    db_id = data.get('id')
+    columna_sql = data.get('columna', '').strip()
+    nuevo_valor = data.get('valor')
+    
+    if columna_sql not in ['talla_ch', 'talla_m', 'talla_g', 'talla_eg'] or nuevo_valor < 0:
+        return jsonify({'status': 'error', 'msg': 'Parámetros no válidos.'})
+        
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        
+        # Obtenemos los datos actuales para estampar la auditoría completa
+        cursor.execute("SELECT modelo, estampado, color FROM panel_stock WHERE id = %s", (db_id,))
+        info = cursor.fetchone()
+        
+        if info:
+            # 1. Inyectamos la actualización directa al Stock
+            cursor.execute(f"UPDATE panel_stock SET {columna_sql} = %s WHERE id = %s", (nuevo_valor, db_id))
+            
+            # 2. Guardamos registro transparente en tu tabla de auditoría en la nube
+            fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            talla_legible = columna_sql.replace('talla_', '').upper()
+            
+            sql_h = """
+                INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                VALUES (%s, %s, %s, %s, 0, 0.00, 0.00, %s, 'EDICION MANUAL WEB', %s)
+            """
+            cursor.execute(sql_h, (info['modelo'], info['estampado'], info['color'], talla_legible, fecha_actual, f"{current_user.nombre_real} (Móvil)"))
+            db.commit()
+            
+            cursor.close()
+            db.close()
+            return jsonify({'status': 'ok'})
+            
+        cursor.close()
+        db.close()
+        return jsonify({'status': 'error', 'msg': 'Fila no encontrada.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'msg': str(e)})
 
 @app.route('/api/baja', methods=['POST'])
 @login_required
@@ -466,7 +564,6 @@ def api_baja():
             fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             precio_p = float(prenda['precio'])
             
-            # Se estampa de forma transparente qué operario web firmó el descuento desde su celular
             sql_h = """
                 INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
                 VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
@@ -483,7 +580,6 @@ def api_baja():
     db.close()
     return jsonify({'status': 'error', 'msg': 'Código de barras no válido.'})
 
-# 🚪 RUTA PARA LOGOUT DEL NAVEGADOR MÓVIL
 @app.route('/logout')
 @login_required
 def logout():
