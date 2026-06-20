@@ -1,8 +1,16 @@
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, request, jsonify, redirect, url_for, flash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import mysql.connector
 import os
+import datetime
 
 app = Flask(__name__)
+app.secret_key = 'CLAVE_SECRETA_GACRUX_ALBERTO_2026' # 🔑 Llave para encriptar las sesiones en los celulares
+
+# Configuración del sistema de seguridad de accesos
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login' # Redirige aquí si intentan espiar sin iniciar sesión
 
 def conectar_bd():
     if "RENDER" in os.environ:
@@ -21,7 +29,70 @@ def conectar_bd():
             database="gacrux_pos"
         )
 
-# 🎨 DISEÑO WEB ADAPTATIVO INTELIGENTE (SIN COLUMNAS EN CEROS)
+# Clase de usuario para que Flask rastree quién está navegando en el celular
+class UsuarioWeb(UserMixin):
+    def __init__(self, id_user, usuario, nombre_real):
+        self.id = id_user
+        self.usuario = usuario
+        self.nombre_real = nombre_real
+
+@login_manager.user_loader
+def load_user(user_id):
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT id, usuario, nombre_real FROM usuarios_gacrux WHERE id = %s", (user_id,))
+        res = cursor.fetchone()
+        cursor.close()
+        db.close()
+        if res:
+            return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'])
+    except:
+        pass
+    return None
+
+# 🔒 PANTALLA DE INICIO DE SESIÓN WEB AMIGABLE PARA CELULARES
+HTML_LOGIN = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GACRUX - Iniciar Sesión</title>
+    <style>
+        body { background-color: #121214; color: white; font-family: 'Segoe UI', Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-box { background: #1e1e24; padding: 35px 30px; border-radius: 8px; width: 90%; max-width: 360px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-bottom: 3px solid #1e3a8a; }
+        h2 { font-size: 1.5rem; margin-bottom: 5px; letter-spacing: 1px; }
+        p { color: #888; font-size: 0.9rem; margin-bottom: 25px; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #333; background: #26262b; color: white; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
+        input:focus { border-color: #1e3a8a; outline: none; }
+        button { width: 100%; padding: 12px; background: #1e3a8a; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 1rem; text-transform: uppercase; }
+        button:hover { background: #1d4ed8; }
+        .error { color: #ff4a4a; font-size: 0.9rem; margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>SISTEMA GACRUX</h2>
+        <p>Control de Almacén en Línea</p>
+        <form method="POST">
+            <input type="text" name="usuario" placeholder="Usuario" required autocomplete="off">
+            <input type="password" name="password" placeholder="Contraseña" required>
+            <button type="submit">ENTRAR 🔓</button>
+        </form>
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            {% for msg in messages %}
+              <div class="error">⚠️ {{ msg }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+    </div>
+</body>
+</html>
+"""
+
+# 🎨 DISEÑO WEB ADAPTATIVO INTELIGENTE (TU INTERFAZ ORIGINAL CON RASTREO)
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -86,6 +157,9 @@ HTML_BASE = """
         .stock-cero { color: #3d3d3d !important; font-weight: normal; }
         
         .fila-totales-excel { width: 100%; padding: 8px 15px; background-color: var(--bg-block); font-size: 0.9rem; font-weight: bold; color: #e63946; border-top: 1px dashed #e63946; display: flex; justify-content: space-between; flex-wrap: wrap; }
+        
+        .user-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 0.85rem; color: var(--subtext-color); border-top: 1px solid var(--border-color); padding-top: 12px; }
+        .logout-link { color: #e63946; font-weight: bold; text-decoration: none; }
     </style>
 </head>
 <body>
@@ -108,6 +182,11 @@ HTML_BASE = """
             <input type="text" id="busqueda" placeholder="Filtrar por modelo, estampado o color..." onkeyup="buscarPrenda()">
             
             <div id="resultado_busqueda"></div>
+            
+            <div class="user-footer">
+                <div>👤 Sesión activa: <strong>{{ empleado }}</strong></div>
+                <div><a class="logout-link" href="/logout">CERRAR SESIÓN 🚪</a></div>
+            </div>
         </div>
     </div>
 
@@ -216,7 +295,6 @@ HTML_BASE = """
                     `;
                     
                     for (let est in estructura[mod]) {
-                        // 🧠 REVISIÓN DE COLUMNAS ACTIVAS WEB: Filtramos si la columna completa está en ceros
                         let sumCH = 0, sumM = 0, sumG = 0, sumEG = 0;
                         estructura[mod][est].forEach(p => {
                             sumCH += p.talla_ch;
@@ -255,7 +333,6 @@ HTML_BASE = """
                         
                         let sumaTotalTabla = sumCH + sumM + sumG + sumEG;
 
-                        // Armar el texto inferior de totales de forma dinámica
                         let partesTotales = [];
                         if (sumCH > 0) partesTotales.push(`CH: ${sumCH}`);
                         if (sumM > 0) partesTotales.push(`M: ${sumM}`);
@@ -290,11 +367,40 @@ HTML_BASE = """
 </html>
 """
 
+# 🔑 ACCESO AL LOGIN DESDE EL NAVEGADOR
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        user_input = request.form.get('usuario', '').strip().lower()
+        pass_input = request.form.get('password', '').strip()
+        
+        try:
+            db = conectar_bd()
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("SELECT id, usuario, nombre_real FROM usuarios_gacrux WHERE usuario = %s AND password = %s", (user_input, pass_input))
+            validado = cursor.fetchone()
+            cursor.close()
+            db.close()
+            
+            if validado:
+                user_obj = UsuarioWeb(validado['id'], validado['usuario'], validado['nombre_real'])
+                login_user(user_obj)
+                return redirect(url_for('index'))
+            else:
+                flash('Usuario o contraseña incorrectos')
+        except Exception as e:
+            flash(f'Error de conexión: {e}')
+            
+    return render_template_string(HTML_LOGIN)
+
+# 👑 RUTA PRINCIPAL PROTEGIDA CON CONTRASEÑA
 @app.route('/')
+@login_required
 def index():
-    return render_template_string(HTML_BASE)
+    return render_template_string(HTML_BASE, empleado=current_user.nombre_real)
 
 @app.route('/api/buscar')
+@login_required
 def api_buscar():
     q = request.args.get('q', '').strip()
     db = conectar_bd()
@@ -309,6 +415,7 @@ def api_buscar():
     return jsonify(resultados)
 
 @app.route('/api/baja', methods=['POST'])
+@login_required
 def api_baja():
     data = request.get_json()
     codigo = data.get('codigo', '').strip()
@@ -333,14 +440,15 @@ def api_baja():
                 
             cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
             
-            import datetime
             fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             precio_p = float(prenda['precio'])
+            
+            # 📝 SE AUDITA AUTOMÁTICAMENTE EL EMPLEADO QUE DESTRABÓ LA SESIÓN WEB
             sql_h = """
-                INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento)
-                VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO')
+                INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
             """
-            cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual))
+            cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, current_user.nombre_real))
             db.commit()
             
             msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
@@ -351,6 +459,13 @@ def api_baja():
     cursor.close()
     db.close()
     return jsonify({'status': 'error', 'msg': 'Código de barras no válido.'})
+
+# 🚪 RUTA PARA SALIR DE LA SESIÓN WEB
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
