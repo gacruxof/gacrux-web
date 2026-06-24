@@ -258,25 +258,19 @@ HTML_BASE = """
         let html5QrCode = null;
         let scannerActivoParaLeer = false; 
         
-        // Variables para la memoria de escaneo (Contador Visual)
         let ultimoCodigoEscaneado = "";
         let contadorMismoCodigo = 0;
-        
-        // 🐛 SOLUCIÓN CRÍTICA: Un solo motor de audio global para evitar el límite de los navegadores (10 sonidos max)
         let motorAudioGlobal = null;
 
-        // --- SISTEMA DE SINTETIZADOR DE AUDIO BEEP (INMORTAL) ---
         function hacerBeep() {
             try {
                 let AudioContext = window.AudioContext || window.webkitAudioContext;
                 if (!AudioContext) return; 
                 
-                // Si el motor no existe, lo creamos una sola vez
                 if (!motorAudioGlobal) {
                     motorAudioGlobal = new AudioContext();
                 }
                 
-                // Los navegadores a veces pausan el motor si no hay interacción, lo despertamos:
                 if (motorAudioGlobal.state === 'suspended') {
                     motorAudioGlobal.resume();
                 }
@@ -295,14 +289,12 @@ HTML_BASE = """
             } catch(e) { console.log("Audio no soportado en este dispositivo"); }
         }
 
-        // --- SISTEMA DE CÁMARA (Lector y Gatillo) ---
         function encenderScanner() {
             const contenedorLector = document.getElementById('contenedor-lector');
             const btnEncender = document.getElementById('btn-encender-cam');
             const controlesCam = document.getElementById('controles-camara');
             const inputCodigo = document.getElementById('codigo_barras');
             
-            // Bloqueo de Teclado
             inputCodigo.setAttribute('readonly', 'true');
             document.activeElement.blur(); 
             
@@ -367,7 +359,6 @@ HTML_BASE = """
             const controlesCam = document.getElementById('controles-camara');
             const inputCodigo = document.getElementById('codigo_barras');
             
-            // Restaurar teclado
             inputCodigo.removeAttribute('readonly');
             
             if (html5QrCode) {
@@ -390,7 +381,6 @@ HTML_BASE = """
             }
         }
 
-        // --- TEMAS OSCURO / CLARO ---
         function alternarTemaWeb() {
             modoOscuroActivo = !modoOscuroActivo;
             const root = document.documentElement;
@@ -423,7 +413,6 @@ HTML_BASE = """
             }
         }
 
-        // --- LÓGICA DE BAJA EN ALMACÉN ---
         function procesarBaja() {
             let codigo = document.getElementById('codigo_barras').value.trim();
             if(!codigo) return;
@@ -439,7 +428,7 @@ HTML_BASE = """
                 if(data.status === 'ok') {
                     notif.style.color = '#4caf50';
                     notif.innerText = "COINCIDENCIA: " + data.msg;
-                    buscarPrenda(); // Fuerza recarga del stock visible instantáneamente
+                    buscarPrenda();
                 } else {
                     notif.style.color = '#e63946';
                     notif.innerText = "ERROR: " + data.msg;
@@ -456,7 +445,6 @@ HTML_BASE = """
             if (e.key === 'Enter') { procesarBaja(); }
         });
 
-        // --- EDICIÓN EN LÍNEA EXCLUSIVA DE ALBERTO ---
         function activarEdicionCelda(elemento, dbId, columnaSql) {
             if (!esAdmin || elemento.querySelector('input')) return; 
             
@@ -500,7 +488,6 @@ HTML_BASE = """
             input.addEventListener('focusout', guardarCambioInmediato);
         }
 
-        // --- FILTRADO Y RENDERIZADO DEL CATÁLOGO ---
         function buscarPrenda() {
             if (document.querySelector('.input-inline-edit')) return; 
             
@@ -606,7 +593,6 @@ HTML_BASE = """
             });
         }
         
-        // 🚀 BUCLE DE TIEMPO REAL REDUCIDO A 2 SEGUNDOS
         buscarPrenda();
         setInterval(function() {
             if(document.querySelector('.input-inline-edit')) { return; }
@@ -715,42 +701,50 @@ def api_baja():
     
     db = conectar_bd()
     cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT modelo, estampado, color, talla, precio, panel_stock_id FROM inventario WHERE codigo_barras = %s", (codigo,))
+    
+    # Buscamos el código de barras
+    cursor.execute("SELECT modelo, estampado, color, talla, precio FROM inventario WHERE codigo_barras = %s", (codigo,))
     prenda = cursor.fetchone()
     
     if prenda:
         talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg'}
         col = talla_map.get(prenda['talla'].upper().strip())
         
-        if col and prenda['panel_stock_id']:
-            cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (prenda['panel_stock_id'],))
-            stock_actual = cursor.fetchone()[col]
+        if col:
+            # 🚀 LÓGICA DIRECTA WEB: Ya no usamos 'panel_stock_id'. Conectamos directo mediante las características físicas.
+            cursor.execute(f"SELECT {col} FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
+            res_stock = cursor.fetchone()
             
-            if stock_actual <= 0:
+            if res_stock:
+                if res_stock[col] <= 0:
+                    cursor.close()
+                    db.close()
+                    return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
+                    
+                cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE modelo=%s AND estampado=%s AND color=%s", (prenda['modelo'], prenda['estampado'], prenda['color']))
+                
+                fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                precio_p = float(prenda['precio'])
+                
+                sql_h = """
+                    INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                    VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
+                """
+                cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, current_user.nombre_real))
+                db.commit()
+                
+                msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
                 cursor.close()
                 db.close()
-                return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
+                return jsonify({'status': 'ok', 'msg': msg})
+            else:
+                cursor.close()
+                db.close()
+                return jsonify({'status': 'error', 'msg': 'La prenda existe en inventario pero fue borrada del Catálogo Maestro.'})
                 
-            cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
-            
-            fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            precio_p = float(prenda['precio'])
-            
-            sql_h = """
-                INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
-                VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
-            """
-            cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, current_user.nombre_real))
-            db.commit()
-            
-            msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
-            cursor.close()
-            db.close()
-            return jsonify({'status': 'ok', 'msg': msg})
-            
     cursor.close()
     db.close()
-    return jsonify({'status': 'error', 'msg': 'Código de barras no válido.'})
+    return jsonify({'status': 'error', 'msg': 'Código de barras no válido o no asignado a ninguna prenda.'})
 
 @app.route('/logout')
 @login_required
