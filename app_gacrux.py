@@ -22,10 +22,11 @@ def conectar_bd():
         )
     else:
         return mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="gacrux_pos"
+            host="mysql-292462b-gacrux-of.a.aivencloud.com", # Conexión a tu nube Aiven
+            port=19257,
+            user="avnadmin",
+            password="AVNS_lJSsblo1fLuMi6cA-yW",
+            database="defaultdb"
         )
 
 class UsuarioWeb(UserMixin):
@@ -112,7 +113,7 @@ HTML_LOGIN = """
 </html>
 """
 
-# 🎨 CUADRÍCULA INTERACTIVA CON EDICIÓN WEB MAESTRA HABILITADA
+# 🎨 CUADRÍCULA INTERACTIVA CON ESCÁNER Y EDICIÓN WEB
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -120,6 +121,7 @@ HTML_BASE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GACRUX - Panel de Almacén</title>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style id="theme-style">
         :root {
             --bg-body: #1a1a1a;
@@ -151,6 +153,10 @@ HTML_BASE = """
         
         .btn { width: 100%; padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; }
         .btn-baja { background-color: #444444; border: 1px solid #555555; }
+        .btn-camara { background-color: #1e3a8a; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;}
+        
+        #reader { width: 100%; max-width: 500px; margin: 0 auto 15px auto; border-radius: 8px; overflow: hidden; display: none; border: 2px solid #1e3a8a;}
+        
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
         .contenedor-modelo { background-color: var(--bg-card); border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid var(--input-border); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
@@ -195,14 +201,20 @@ HTML_BASE = """
 
         <div class="seccion">
             <h3>Ajuste Rápido de Almacén</h3>
-            <input type="text" id="codigo_barras" placeholder="Escanea o escribe código de barras..." autocomplete="off">
+            
+            <button class="btn btn-camara" id="btn-camara" onclick="toggleScanner()">
+                <span>📷</span> ESCANEAR CON CÁMARA
+            </button>
+            <div id="reader"></div>
+
+            <input type="text" id="codigo_barras" placeholder="O escribe el código de barras manualmente..." autocomplete="off">
             <button class="btn btn-baja" onclick="procesarBaja()">Descontar 1 Unidad</button>
             <div id="notificacion"></div>
         </div>
 
         <div class="seccion">
             <h3>Existencias en Tiempo Real</h3>
-            <input type="text" id="busqueda" placeholder="Filtrar por modelo, estampado o color..." onkeyup="buscarPrenda()">
+            <input type="text" id="busqueda" placeholder="🔍 Filtrar por modelo, estampado o color..." onkeyup="buscarPrenda()">
             
             <div id="resultado_busqueda"></div>
             
@@ -215,8 +227,58 @@ HTML_BASE = """
 
     <script>
         let modoOscuroActivo = true;
-        const esAdmin = "{{ es_admin }}" === "True"; // 🧠 Detecta si el cliente web es Alberto
+        const esAdmin = "{{ es_admin }}" === "True"; 
+        let html5QrCode = null;
 
+        // --- SISTEMA DE CÁMARA (Lector de Códigos de Barras) ---
+        function toggleScanner() {
+            const readerDiv = document.getElementById('reader');
+            const btnCamara = document.getElementById('btn-camara');
+            
+            if (readerDiv.style.display === 'none' || readerDiv.style.display === '') {
+                // Encender la cámara
+                readerDiv.style.display = 'block';
+                btnCamara.innerHTML = "<span>❌</span> CANCELAR ESCÁNER";
+                btnCamara.style.backgroundColor = "#7f1d1d";
+                
+                html5QrCode = new Html5Qrcode("reader");
+                const config = { fps: 10, qrbox: { width: 250, height: 100 } };
+                
+                html5QrCode.start({ facingMode: "environment" }, config, 
+                    (textoDecodificado) => {
+                        // Éxito: Leyó un código
+                        document.getElementById('codigo_barras').value = textoDecodificado;
+                        apagarScanner();
+                        procesarBaja(); // Descuenta automáticamente al leer
+                    },
+                    (errorMensaje) => {
+                        // Ignorar errores de enfoque de fondo
+                    }
+                ).catch(err => {
+                    alert("Error al iniciar la cámara. Verifica los permisos de tu navegador.");
+                    apagarScanner();
+                });
+            } else {
+                apagarScanner();
+            }
+        }
+
+        function apagarScanner() {
+            const readerDiv = document.getElementById('reader');
+            const btnCamara = document.getElementById('btn-camara');
+            
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    readerDiv.style.display = 'none';
+                    btnCamara.innerHTML = "<span>📷</span> ESCANEAR CON CÁMARA";
+                    btnCamara.style.backgroundColor = "#1e3a8a";
+                }).catch(err => {
+                    console.log("No se pudo detener la cámara.");
+                });
+            }
+        }
+
+        // --- TEMAS OSCURO / CLARO ---
         function alternarTemaWeb() {
             modoOscuroActivo = !modoOscuroActivo;
             const root = document.documentElement;
@@ -251,6 +313,7 @@ HTML_BASE = """
 
         document.getElementById('codigo_barras').focus();
 
+        // --- LÓGICA DE BAJA EN ALMACÉN ---
         function procesarBaja() {
             let codigo = document.getElementById('codigo_barras').value.trim();
             if(!codigo) return;
@@ -280,9 +343,9 @@ HTML_BASE = """
             if (e.key === 'Enter') { procesarBaja(); }
         });
 
-        // 🧠 FUNCIÓN MAESTRA: Activa la edición en línea al tocar un stock
+        // --- EDICIÓN EN LÍNEA EXCLUSIVA DE ALBERTO ---
         function activarEdicionCelda(elemento, dbId, columnaSql) {
-            if (!esAdmin || elemento.querySelector('input')) return; // Candado de seguridad
+            if (!esAdmin || elemento.querySelector('input')) return; 
             
             let valorActual = elemento.innerText.trim();
             elemento.innerHTML = `<input type="number" class="input-inline-edit" value="${valorActual}" min="0">`;
@@ -312,7 +375,7 @@ HTML_BASE = """
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'ok') {
-                        buscarPrenda(); // Recalcula totales dinámicos
+                        buscarPrenda(); 
                     } else {
                         alert("Error al inyectar cambio: " + data.msg);
                         elemento.innerHTML = valorActual;
@@ -324,8 +387,9 @@ HTML_BASE = """
             input.addEventListener('focusout', guardarCambioInmediato);
         }
 
+        // --- FILTRADO Y RENDERIZADO DEL CATÁLOGO ---
         function buscarPrenda() {
-            if (document.querySelector('.input-inline-edit')) return; // No interrumpe si estás escribiendo un número
+            if (document.querySelector('.input-inline-edit')) return; 
             
             let query = document.getElementById('busqueda').value;
             fetch('/api/buscar?q=' + query)
@@ -337,7 +401,8 @@ HTML_BASE = """
                 let estructura = {};
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
-                    let est = p.estampado.trim();
+                    // 🐛 SOLUCIÓN CRÍTICA DE SEPARACIÓN DE COLORES
+                    let est = p.estampado.toUpperCase().trim(); 
                     
                     if (!estructura[mod]) { estructura[mod] = {}; }
                     if (!estructura[mod][est]) { estructura[mod][est] = []; }
@@ -375,7 +440,7 @@ HTML_BASE = """
 
                         htmlBlock += `
                             <div class="bloque-estampado">
-                                <div class="titulo-estampado">${est.toUpperCase()}</div>
+                                <div class="titulo-estampado">${est}</div>
                                 <table class="tabla-catalogo">
                                     <thead>
                                         <tr>
@@ -390,7 +455,6 @@ HTML_BASE = """
                         `;
                         
                         estructura[mod][est].forEach(p => {
-                            // Inyecta dinámicamente la clase 'editable' y la llamada onclick si eres Alberto
                             let claseEditable = esAdmin ? 'editable' : '';
                             
                             htmlBlock += `
@@ -449,13 +513,14 @@ def login():
         try:
             db = conectar_bd()
             cursor = db.cursor(dictionary=True)
-            cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE usuario = %s AND password = %s", (user_input, pass_input))
-            validado = cursor.fetchone()
+            # 🐛 SOLUCIÓN CRÍTICA DE CONTRASEÑAS INEXACTAS: Validar mayúsculas y minúsculas exactas en Python
+            cursor.execute("SELECT id, usuario, nombre_real, rol_puesto, password FROM usuarios_gacrux WHERE usuario = %s", (user_input,))
+            usuario_bd = cursor.fetchone()
             cursor.close()
             db.close()
             
-            if validado:
-                user_obj = UsuarioWeb(validado['id'], validado['usuario'], validado['nombre_real'], validado['rol_puesto'])
+            if usuario_bd and usuario_bd['password'] == pass_input:
+                user_obj = UsuarioWeb(usuario_bd['id'], usuario_bd['usuario'], usuario_bd['nombre_real'], usuario_bd['rol_puesto'])
                 login_user(user_obj)
                 return redirect(url_for('index'))
             else:
@@ -468,7 +533,6 @@ def login():
 @app.route('/')
 @login_required
 def index():
-    # 🧠 Pasamos la validación es_admin al HTML (True si es tu cuenta)
     es_jefe = (current_user.usuario == "alberto")
     return render_template_string(HTML_BASE, empleado=current_user.nombre_real.upper(), puesto=current_user.rol_puesto.upper(), es_admin=es_jefe)
 
@@ -487,7 +551,6 @@ def api_buscar():
     db.close()
     return jsonify(resultados)
 
-# 👑 ENDPOINT EXCLUSIVO: Procesa la edición manual desde el celular de Alberto
 @app.route('/api/guardar_stock_web', methods=['POST'])
 @login_required
 def api_guardar_stock_web():
@@ -506,15 +569,12 @@ def api_guardar_stock_web():
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
         
-        # Obtenemos los datos actuales para estampar la auditoría completa
         cursor.execute("SELECT modelo, estampado, color FROM panel_stock WHERE id = %s", (db_id,))
         info = cursor.fetchone()
         
         if info:
-            # 1. Inyectamos la actualización directa al Stock
             cursor.execute(f"UPDATE panel_stock SET {columna_sql} = %s WHERE id = %s", (nuevo_valor, db_id))
             
-            # 2. Guardamos registro transparente en tu tabla de auditoría en la nube
             fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             talla_legible = columna_sql.replace('talla_', '').upper()
             
