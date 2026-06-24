@@ -113,7 +113,7 @@ HTML_LOGIN = """
 </html>
 """
 
-# 🎨 CUADRÍCULA INTERACTIVA CON CONTADOR VISUAL
+# 🎨 CUADRÍCULA INTERACTIVA CON CONTADOR VISUAL Y SONIDO INMORTAL
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -261,22 +261,37 @@ HTML_BASE = """
         // Variables para la memoria de escaneo (Contador Visual)
         let ultimoCodigoEscaneado = "";
         let contadorMismoCodigo = 0;
+        
+        // 🐛 SOLUCIÓN CRÍTICA: Un solo motor de audio global para evitar el límite de los navegadores (10 sonidos max)
+        let motorAudioGlobal = null;
 
-        // --- SISTEMA DE SINTETIZADOR DE AUDIO BEEP ---
+        // --- SISTEMA DE SINTETIZADOR DE AUDIO BEEP (INMORTAL) ---
         function hacerBeep() {
             try {
                 let AudioContext = window.AudioContext || window.webkitAudioContext;
                 if (!AudioContext) return; 
-                let ctx = new AudioContext();
-                let osc = ctx.createOscillator();
-                let gain = ctx.createGain();
+                
+                // Si el motor no existe, lo creamos una sola vez
+                if (!motorAudioGlobal) {
+                    motorAudioGlobal = new AudioContext();
+                }
+                
+                // Los navegadores a veces pausan el motor si no hay interacción, lo despertamos:
+                if (motorAudioGlobal.state === 'suspended') {
+                    motorAudioGlobal.resume();
+                }
+                
+                let osc = motorAudioGlobal.createOscillator();
+                let gain = motorAudioGlobal.createGain();
+                
                 osc.connect(gain);
-                gain.connect(ctx.destination);
+                gain.connect(motorAudioGlobal.destination);
                 osc.type = "square";
-                osc.frequency.setValueAtTime(850, ctx.currentTime);
-                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.frequency.setValueAtTime(850, motorAudioGlobal.currentTime);
+                gain.gain.setValueAtTime(0.1, motorAudioGlobal.currentTime);
+                
                 osc.start();
-                osc.stop(ctx.currentTime + 0.15); 
+                osc.stop(motorAudioGlobal.currentTime + 0.15); 
             } catch(e) { console.log("Audio no soportado en este dispositivo"); }
         }
 
@@ -291,11 +306,10 @@ HTML_BASE = """
             inputCodigo.setAttribute('readonly', 'true');
             document.activeElement.blur(); 
             
-            contenedorLector.style.display = 'block'; // Mostrar marco principal
+            contenedorLector.style.display = 'block'; 
             btnEncender.style.display = 'none';
             controlesCam.style.display = 'flex';
             
-            // Reiniciar memoria por si acabo de encender la cámara
             ultimoCodigoEscaneado = "";
             contadorMismoCodigo = 0;
             document.getElementById('badge-contador').style.display = 'none';
@@ -309,7 +323,6 @@ HTML_BASE = """
                         scannerActivoParaLeer = false; 
                         hacerBeep(); 
                         
-                        // LÓGICA DEL CONTADOR DE CÓDIGO
                         if (textoDecodificado === ultimoCodigoEscaneado) {
                             contadorMismoCodigo++;
                         } else {
@@ -317,12 +330,10 @@ HTML_BASE = """
                             contadorMismoCodigo = 1;
                         }
                         
-                        // Mostrar y animar el contador (Badge flotante)
                         const badge = document.getElementById('badge-contador');
                         badge.style.display = 'block';
                         badge.innerText = "x" + contadorMismoCodigo;
                         
-                        // Pequeño zoom de animación
                         badge.style.transform = "scale(1.3)";
                         setTimeout(() => { badge.style.transform = "scale(1)"; }, 150);
                         
@@ -366,7 +377,6 @@ HTML_BASE = """
                     btnEncender.style.display = 'flex';
                     scannerActivoParaLeer = false;
                     
-                    // Apagar contador
                     ultimoCodigoEscaneado = "";
                     contadorMismoCodigo = 0;
                     document.getElementById('badge-contador').style.display = 'none';
@@ -429,14 +439,13 @@ HTML_BASE = """
                 if(data.status === 'ok') {
                     notif.style.color = '#4caf50';
                     notif.innerText = "COINCIDENCIA: " + data.msg;
-                    buscarPrenda();
+                    buscarPrenda(); // Fuerza recarga del stock visible instantáneamente
                 } else {
                     notif.style.color = '#e63946';
                     notif.innerText = "ERROR: " + data.msg;
                 }
                 document.getElementById('codigo_barras').value = '';
                 
-                // Retornar el foco SOLO si la cámara está apagada
                 if (document.getElementById('contenedor-lector').style.display !== 'block') {
                     document.getElementById('codigo_barras').focus();
                 }
@@ -597,11 +606,12 @@ HTML_BASE = """
             });
         }
         
+        // 🚀 BUCLE DE TIEMPO REAL REDUCIDO A 2 SEGUNDOS
         buscarPrenda();
         setInterval(function() {
             if(document.querySelector('.input-inline-edit')) { return; }
             buscarPrenda();
-        }, 3000);
+        }, 2000);
     </script>
 </body>
 </html>
