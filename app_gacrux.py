@@ -113,7 +113,7 @@ HTML_LOGIN = """
 </html>
 """
 
-# 🎨 CUADRÍCULA INTERACTIVA CON ESCÁNER Y EDICIÓN WEB
+# 🎨 CUADRÍCULA INTERACTIVA CON ESCÁNER PROFESIONAL
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -151,16 +151,21 @@ HTML_BASE = """
         input[type="text"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); font-size: 1rem; margin-bottom: 15px; background-color: var(--input-bg); color: var(--text-color); }
         input[type="text"]:focus { border-color: #888888; outline: none; }
         
-        .btn { width: 100%; padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; }
+        .btn { padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; }
+        .btn-full { width: 100%; }
         .btn-baja { background-color: #444444; border: 1px solid #555555; }
-        .btn-camara { background-color: #1e3a8a; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;}
         
+        .btn-camara { background-color: #1e3a8a; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;}
         #reader { width: 100%; max-width: 500px; margin: 0 auto 15px auto; border-radius: 8px; overflow: hidden; display: none; border: 2px solid #1e3a8a;}
+        
+        /* Controles de cámara estilo supermercado */
+        #controles-camara { display: none; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .btn-disparar { background-color: #2e7d32; flex-grow: 1; font-size: 1.1rem; }
+        .btn-cerrar-cam { background-color: #7f1d1d; width: 35%; min-width: 120px; }
         
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
         .contenedor-modelo { background-color: var(--bg-card); border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid var(--input-border); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-        
         .header-modelo-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px 15px; border-radius: 4px; color: #ffffff; }
         .mod-azul .header-modelo-flex { background-color: #1e3a8a; }
         .mod-rojo .header-modelo-flex { background-color: #7f1d1d; }
@@ -176,10 +181,8 @@ HTML_BASE = """
         .tabla-catalogo { width: 100%; border-collapse: collapse; text-align: center; background-color: var(--bg-table); }
         .tabla-catalogo th { background-color: var(--bg-th); color: #999999; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid var(--border-color); }
         .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid var(--border-color); }
-        
         .col-color { text-align: left; font-weight: bold; color: var(--text-color); padding-left: 15px !important; }
         
-        /* 👑 ESTILOS EXCLUSIVOS PARA CELDAS EDITABLES */
         .stock-num { font-weight: bold; color: var(--text-color); }
         .editable { cursor: pointer; background-color: rgba(30, 58, 138, 0.1); border-radius: 3px; position: relative; }
         .editable:hover { background-color: rgba(30, 58, 138, 0.3); color: #4ea8de; }
@@ -202,13 +205,19 @@ HTML_BASE = """
         <div class="seccion">
             <h3>Ajuste Rápido de Almacén</h3>
             
-            <button class="btn btn-camara" id="btn-camara" onclick="toggleScanner()">
-                <span>📷</span> ESCANEAR CON CÁMARA
+            <button class="btn btn-full btn-camara" id="btn-encender-cam" onclick="encenderScanner()">
+                <span>📷</span> ENCENDER VISOR DE CÁMARA
             </button>
+            
             <div id="reader"></div>
+            
+            <div id="controles-camara">
+                <button class="btn btn-cerrar-cam" onclick="apagarScanner()">🔴 CERRAR</button>
+                <button class="btn btn-disparar" id="btn-disparar" onclick="activarDisparo()">🎯 DISPARAR (LEER CÓDIGO)</button>
+            </div>
 
             <input type="text" id="codigo_barras" placeholder="O escribe el código de barras manualmente..." autocomplete="off">
-            <button class="btn btn-baja" onclick="procesarBaja()">Descontar 1 Unidad</button>
+            <button class="btn btn-full btn-baja" onclick="procesarBaja()">Descontar 1 Unidad</button>
             <div id="notificacion"></div>
         </div>
 
@@ -228,50 +237,91 @@ HTML_BASE = """
     <script>
         let modoOscuroActivo = true;
         const esAdmin = "{{ es_admin }}" === "True"; 
+        
         let html5QrCode = null;
+        let scannerActivoParaLeer = false; // Gatillo de la pistola
 
-        // --- SISTEMA DE CÁMARA (Lector de Códigos de Barras) ---
-        function toggleScanner() {
+        // --- SISTEMA DE SINTETIZADOR DE AUDIO BEEP ---
+        function hacerBeep() {
+            try {
+                let AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return; 
+                let ctx = new AudioContext();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = "square";
+                osc.frequency.setValueAtTime(850, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.15); // Duración de 0.15 segundos
+            } catch(e) { console.log("Audio no soportado en este dispositivo"); }
+        }
+
+        // --- SISTEMA DE CÁMARA (Lector y Gatillo) ---
+        function encenderScanner() {
             const readerDiv = document.getElementById('reader');
-            const btnCamara = document.getElementById('btn-camara');
+            const btnEncender = document.getElementById('btn-encender-cam');
+            const controlesCam = document.getElementById('controles-camara');
             
-            if (readerDiv.style.display === 'none' || readerDiv.style.display === '') {
-                // Encender la cámara
-                readerDiv.style.display = 'block';
-                btnCamara.innerHTML = "<span>❌</span> CANCELAR ESCÁNER";
-                btnCamara.style.backgroundColor = "#7f1d1d";
-                
-                html5QrCode = new Html5Qrcode("reader");
-                const config = { fps: 10, qrbox: { width: 250, height: 100 } };
-                
-                html5QrCode.start({ facingMode: "environment" }, config, 
-                    (textoDecodificado) => {
-                        // Éxito: Leyó un código
+            readerDiv.style.display = 'block';
+            btnEncender.style.display = 'none';
+            controlesCam.style.display = 'flex';
+            
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 15, qrbox: { width: 250, height: 120 } }; // Formato rectangular para códigos de barras
+            
+            html5QrCode.start({ facingMode: "environment" }, config, 
+                (textoDecodificado) => {
+                    // Solo atrapa el código SI el usuario presionó el botón de Disparar
+                    if (scannerActivoParaLeer) {
+                        scannerActivoParaLeer = false; 
+                        hacerBeep(); 
+                        
                         document.getElementById('codigo_barras').value = textoDecodificado;
-                        apagarScanner();
-                        procesarBaja(); // Descuenta automáticamente al leer
-                    },
-                    (errorMensaje) => {
-                        // Ignorar errores de enfoque de fondo
+                        
+                        // Restaura visualmente el botón
+                        const btnDisparar = document.getElementById('btn-disparar');
+                        btnDisparar.innerHTML = "🎯 DISPARAR (LEER CÓDIGO)";
+                        btnDisparar.style.backgroundColor = "#2e7d32";
+                        
+                        // Automáticamente manda a descontar
+                        procesarBaja();
                     }
-                ).catch(err => {
-                    alert("Error al iniciar la cámara. Verifica los permisos de tu navegador.");
-                    apagarScanner();
-                });
-            } else {
+                },
+                (errorMensaje) => {
+                    // Ignora silenciosamente los fotogramas donde no encuentra códigos
+                }
+            ).catch(err => {
+                alert("Error al iniciar la cámara. Ocurre si le negaste los permisos a tu navegador.");
                 apagarScanner();
-            }
+            });
+        }
+
+        function activarDisparo() {
+            if (!html5QrCode) return;
+            scannerActivoParaLeer = true; // Arma el gatillo
+            const btnDisparar = document.getElementById('btn-disparar');
+            btnDisparar.innerHTML = "👀 ENFOCA EL CÓDIGO AHORA...";
+            btnDisparar.style.backgroundColor = "#d08c00"; // Se pone amarillo indicando que está atento
         }
 
         function apagarScanner() {
             const readerDiv = document.getElementById('reader');
-            const btnCamara = document.getElementById('btn-camara');
+            const btnEncender = document.getElementById('btn-encender-cam');
+            const controlesCam = document.getElementById('controles-camara');
             
             if (html5QrCode) {
                 html5QrCode.stop().then(() => {
                     readerDiv.style.display = 'none';
-                    btnCamara.innerHTML = "<span>📷</span> ESCANEAR CON CÁMARA";
-                    btnCamara.style.backgroundColor = "#1e3a8a";
+                    controlesCam.style.display = 'none';
+                    btnEncender.style.display = 'flex';
+                    scannerActivoParaLeer = false;
+                    
+                    const btnDisparar = document.getElementById('btn-disparar');
+                    btnDisparar.innerHTML = "🎯 DISPARAR (LEER CÓDIGO)";
+                    btnDisparar.style.backgroundColor = "#2e7d32";
                 }).catch(err => {
                     console.log("No se pudo detener la cámara.");
                 });
@@ -401,7 +451,7 @@ HTML_BASE = """
                 let estructura = {};
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
-                    // 🐛 SOLUCIÓN CRÍTICA DE SEPARACIÓN DE COLORES
+                    // 🐛 SOLUCIÓN CRÍTICA: Fuerza la lectura en mayúscula para no dividir tarjetas de "GOOD THINGS" vs "Good Things"
                     let est = p.estampado.toUpperCase().trim(); 
                     
                     if (!estructura[mod]) { estructura[mod] = {}; }
@@ -513,7 +563,7 @@ def login():
         try:
             db = conectar_bd()
             cursor = db.cursor(dictionary=True)
-            # 🐛 SOLUCIÓN CRÍTICA DE CONTRASEÑAS INEXACTAS: Validar mayúsculas y minúsculas exactas en Python
+            # 🐛 SOLUCIÓN CRÍTICA: Descarga la contraseña real para validarla estricta en Python (Case-sensitive)
             cursor.execute("SELECT id, usuario, nombre_real, rol_puesto, password FROM usuarios_gacrux WHERE usuario = %s", (user_input,))
             usuario_bd = cursor.fetchone()
             cursor.close()
