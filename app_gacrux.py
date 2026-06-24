@@ -113,7 +113,7 @@ HTML_LOGIN = """
 </html>
 """
 
-# 🎨 CUADRÍCULA INTERACTIVA CON ESCÁNER PROFESIONAL
+# 🎨 CUADRÍCULA INTERACTIVA CON CONTADOR VISUAL
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -139,10 +139,14 @@ HTML_BASE = """
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; transition: background 0.2s, color 0.2s; }
         body { background-color: var(--bg-body); color: var(--text-color); padding: 15px; }
         
-        header { position: relative; text-align: center; margin-bottom: 25px; padding: 15px; background-color: var(--bg-card); border-radius: 6px; border-bottom: 3px solid #444444; }
-        h2 { color: #ffffff; font-size: 1.6rem; letter-spacing: 1px; }
+        header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 25px; padding: 15px 20px; background-color: var(--bg-card); border-radius: 6px; border-bottom: 3px solid #444444; gap: 15px; }
+        .header-info { text-align: left; }
+        .header-actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+        h2 { color: #ffffff; font-size: 1.6rem; letter-spacing: 1px; margin-bottom: 4px;}
         
-        .theme-toggle { position: absolute; top: 15px; right: 15px; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; background-color: #444444; color: white; }
+        .theme-toggle { padding: 8px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; background-color: #444444; color: white; width: 100%;}
+        .logout-link { background-color: transparent; color: #ef233c; font-weight: bold; text-decoration: none; border: 1px solid #ef233c; padding: 6px 12px; border-radius: 4px; text-transform: uppercase; font-size: 0.85rem; text-align: center; width: 100%; display: block;}
+        .logout-link:hover { background-color: #ef233c; color: white; }
         
         .container { max-width: 1100px; margin: 0 auto; }
         .seccion { background-color: var(--bg-card); padding: 20px; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
@@ -156,9 +160,18 @@ HTML_BASE = """
         .btn-baja { background-color: #444444; border: 1px solid #555555; }
         
         .btn-camara { background-color: #1e3a8a; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;}
-        #reader { width: 100%; max-width: 500px; margin: 0 auto 15px auto; border-radius: 8px; overflow: hidden; display: none; border: 2px solid #1e3a8a;}
         
-        /* Controles de cámara estilo supermercado */
+        /* CONTENEDOR RELATIVO PARA LA CÁMARA Y EL CONTADOR */
+        #contenedor-lector { position: relative; width: 100%; max-width: 500px; margin: 0 auto 15px auto; display: none; }
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; border: 2px solid #1e3a8a; background: black;}
+        
+        /* 🔴 DISEÑO DEL CONTADOR FLOTANTE */
+        .contador-escaner {
+            position: absolute; top: 10px; right: 10px; background-color: #ef233c; color: white; padding: 6px 15px;
+            border-radius: 20px; font-weight: 900; font-size: 1.5rem; display: none; z-index: 999;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.6); border: 2px solid white; transition: transform 0.15s ease-out;
+        }
+        
         #controles-camara { display: none; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
         .btn-disparar { background-color: #2e7d32; flex-grow: 1; font-size: 1.1rem; }
         .btn-cerrar-cam { background-color: #7f1d1d; width: 35%; min-width: 120px; }
@@ -190,16 +203,23 @@ HTML_BASE = """
         
         .stock-cero { color: #3d3d3d !important; font-weight: normal; }
         .fila-totales-excel { width: 100%; padding: 8px 15px; background-color: var(--bg-block); font-size: 0.9rem; font-weight: bold; color: #e63946; border-top: 1px dashed #e63946; display: flex; justify-content: space-between; flex-wrap: wrap; }
-        .user-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 0.85rem; color: var(--subtext-color); border-top: 1px solid var(--border-color); padding-top: 12px; flex-wrap: wrap; gap: 10px; }
-        .logout-link { color: #ef233c; font-weight: bold; text-decoration: none; border: 1px solid #ef233c; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h2>SISTEMA GACRUX</h2>
-            <p style="font-size: 0.85rem; color: var(--subtext-color); margin-top: 4px;">Control de Inventario Centralizado</p>
-            <button class="theme-toggle" onclick="alternarTemaWeb()">CAMBIAR TEMA ☀️</button>
+            <div class="header-info">
+                <h2>SISTEMA GACRUX</h2>
+                <p style="font-size: 0.85rem; color: var(--subtext-color);">Control de Inventario Centralizado</p>
+                <div style="margin-top: 10px; font-size: 0.85rem;">
+                    👤 SESIÓN: <strong>{{ empleado }}</strong><br>
+                    🛡️ PUESTO: <span style="color: #4ea8de; font-weight: bold;">{{ puesto }}</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="theme-toggle" onclick="alternarTemaWeb()">CAMBIAR TEMA ☀️</button>
+                <a class="logout-link" href="/logout">CERRAR SESIÓN 🚪</a>
+            </div>
         </header>
 
         <div class="seccion">
@@ -209,7 +229,10 @@ HTML_BASE = """
                 <span>📷</span> ENCENDER VISOR DE CÁMARA
             </button>
             
-            <div id="reader"></div>
+            <div id="contenedor-lector">
+                <div id="reader"></div>
+                <div id="badge-contador" class="contador-escaner">x1</div>
+            </div>
             
             <div id="controles-camara">
                 <button class="btn btn-cerrar-cam" onclick="apagarScanner()">🔴 CERRAR</button>
@@ -224,13 +247,7 @@ HTML_BASE = """
         <div class="seccion">
             <h3>Existencias en Tiempo Real</h3>
             <input type="text" id="busqueda" placeholder="🔍 Filtrar por modelo, estampado o color..." onkeyup="buscarPrenda()">
-            
             <div id="resultado_busqueda"></div>
-            
-            <div class="user-footer">
-                <div>👤 SESIÓN: <strong>{{ empleado }}</strong> &nbsp;|&nbsp; PUESTO: <span style="color: #1e3a8a; font-weight: bold;">{{ puesto }}</span></div>
-                <div><a class="logout-link" href="/logout">Cerrar Sesión 🚪</a></div>
-            </div>
         </div>
     </div>
 
@@ -239,7 +256,11 @@ HTML_BASE = """
         const esAdmin = "{{ es_admin }}" === "True"; 
         
         let html5QrCode = null;
-        let scannerActivoParaLeer = false; // Gatillo de la pistola
+        let scannerActivoParaLeer = false; 
+        
+        // Variables para la memoria de escaneo (Contador Visual)
+        let ultimoCodigoEscaneado = "";
+        let contadorMismoCodigo = 0;
 
         // --- SISTEMA DE SINTETIZADOR DE AUDIO BEEP ---
         function hacerBeep() {
@@ -255,44 +276,66 @@ HTML_BASE = """
                 osc.frequency.setValueAtTime(850, ctx.currentTime);
                 gain.gain.setValueAtTime(0.1, ctx.currentTime);
                 osc.start();
-                osc.stop(ctx.currentTime + 0.15); // Duración de 0.15 segundos
+                osc.stop(ctx.currentTime + 0.15); 
             } catch(e) { console.log("Audio no soportado en este dispositivo"); }
         }
 
         // --- SISTEMA DE CÁMARA (Lector y Gatillo) ---
         function encenderScanner() {
-            const readerDiv = document.getElementById('reader');
+            const contenedorLector = document.getElementById('contenedor-lector');
             const btnEncender = document.getElementById('btn-encender-cam');
             const controlesCam = document.getElementById('controles-camara');
+            const inputCodigo = document.getElementById('codigo_barras');
             
-            readerDiv.style.display = 'block';
+            // Bloqueo de Teclado
+            inputCodigo.setAttribute('readonly', 'true');
+            document.activeElement.blur(); 
+            
+            contenedorLector.style.display = 'block'; // Mostrar marco principal
             btnEncender.style.display = 'none';
             controlesCam.style.display = 'flex';
             
+            // Reiniciar memoria por si acabo de encender la cámara
+            ultimoCodigoEscaneado = "";
+            contadorMismoCodigo = 0;
+            document.getElementById('badge-contador').style.display = 'none';
+            
             html5QrCode = new Html5Qrcode("reader");
-            const config = { fps: 15, qrbox: { width: 250, height: 120 } }; // Formato rectangular para códigos de barras
+            const config = { fps: 15, qrbox: { width: 250, height: 120 } }; 
             
             html5QrCode.start({ facingMode: "environment" }, config, 
                 (textoDecodificado) => {
-                    // Solo atrapa el código SI el usuario presionó el botón de Disparar
                     if (scannerActivoParaLeer) {
                         scannerActivoParaLeer = false; 
                         hacerBeep(); 
                         
-                        document.getElementById('codigo_barras').value = textoDecodificado;
+                        // LÓGICA DEL CONTADOR DE CÓDIGO
+                        if (textoDecodificado === ultimoCodigoEscaneado) {
+                            contadorMismoCodigo++;
+                        } else {
+                            ultimoCodigoEscaneado = textoDecodificado;
+                            contadorMismoCodigo = 1;
+                        }
                         
-                        // Restaura visualmente el botón
+                        // Mostrar y animar el contador (Badge flotante)
+                        const badge = document.getElementById('badge-contador');
+                        badge.style.display = 'block';
+                        badge.innerText = "x" + contadorMismoCodigo;
+                        
+                        // Pequeño zoom de animación
+                        badge.style.transform = "scale(1.3)";
+                        setTimeout(() => { badge.style.transform = "scale(1)"; }, 150);
+                        
+                        inputCodigo.value = textoDecodificado;
+                        
                         const btnDisparar = document.getElementById('btn-disparar');
                         btnDisparar.innerHTML = "🎯 DISPARAR (LEER CÓDIGO)";
                         btnDisparar.style.backgroundColor = "#2e7d32";
                         
-                        // Automáticamente manda a descontar
                         procesarBaja();
                     }
                 },
-                (errorMensaje) => {
-                    // Ignora silenciosamente los fotogramas donde no encuentra códigos
-                }
+                (errorMensaje) => {}
             ).catch(err => {
                 alert("Error al iniciar la cámara. Ocurre si le negaste los permisos a tu navegador.");
                 apagarScanner();
@@ -301,23 +344,32 @@ HTML_BASE = """
 
         function activarDisparo() {
             if (!html5QrCode) return;
-            scannerActivoParaLeer = true; // Arma el gatillo
+            scannerActivoParaLeer = true; 
             const btnDisparar = document.getElementById('btn-disparar');
             btnDisparar.innerHTML = "👀 ENFOCA EL CÓDIGO AHORA...";
-            btnDisparar.style.backgroundColor = "#d08c00"; // Se pone amarillo indicando que está atento
+            btnDisparar.style.backgroundColor = "#d08c00"; 
         }
 
         function apagarScanner() {
-            const readerDiv = document.getElementById('reader');
+            const contenedorLector = document.getElementById('contenedor-lector');
             const btnEncender = document.getElementById('btn-encender-cam');
             const controlesCam = document.getElementById('controles-camara');
+            const inputCodigo = document.getElementById('codigo_barras');
+            
+            // Restaurar teclado
+            inputCodigo.removeAttribute('readonly');
             
             if (html5QrCode) {
                 html5QrCode.stop().then(() => {
-                    readerDiv.style.display = 'none';
+                    contenedorLector.style.display = 'none';
                     controlesCam.style.display = 'none';
                     btnEncender.style.display = 'flex';
                     scannerActivoParaLeer = false;
+                    
+                    // Apagar contador
+                    ultimoCodigoEscaneado = "";
+                    contadorMismoCodigo = 0;
+                    document.getElementById('badge-contador').style.display = 'none';
                     
                     const btnDisparar = document.getElementById('btn-disparar');
                     btnDisparar.innerHTML = "🎯 DISPARAR (LEER CÓDIGO)";
@@ -361,8 +413,6 @@ HTML_BASE = """
             }
         }
 
-        document.getElementById('codigo_barras').focus();
-
         // --- LÓGICA DE BAJA EN ALMACÉN ---
         function procesarBaja() {
             let codigo = document.getElementById('codigo_barras').value.trim();
@@ -385,7 +435,11 @@ HTML_BASE = """
                     notif.innerText = "ERROR: " + data.msg;
                 }
                 document.getElementById('codigo_barras').value = '';
-                document.getElementById('codigo_barras').focus();
+                
+                // Retornar el foco SOLO si la cámara está apagada
+                if (document.getElementById('contenedor-lector').style.display !== 'block') {
+                    document.getElementById('codigo_barras').focus();
+                }
             });
         }
 
@@ -451,7 +505,6 @@ HTML_BASE = """
                 let estructura = {};
                 data.forEach(p => {
                     let mod = p.modelo.toUpperCase().trim();
-                    // 🐛 SOLUCIÓN CRÍTICA: Fuerza la lectura en mayúscula para no dividir tarjetas de "GOOD THINGS" vs "Good Things"
                     let est = p.estampado.toUpperCase().trim(); 
                     
                     if (!estructura[mod]) { estructura[mod] = {}; }
@@ -546,7 +599,7 @@ HTML_BASE = """
         
         buscarPrenda();
         setInterval(function() {
-            if(document.getElementById('busqueda').value.trim() || document.querySelector('.input-inline-edit')) { return; }
+            if(document.querySelector('.input-inline-edit')) { return; }
             buscarPrenda();
         }, 3000);
     </script>
@@ -563,7 +616,6 @@ def login():
         try:
             db = conectar_bd()
             cursor = db.cursor(dictionary=True)
-            # 🐛 SOLUCIÓN CRÍTICA: Descarga la contraseña real para validarla estricta en Python (Case-sensitive)
             cursor.execute("SELECT id, usuario, nombre_real, rol_puesto, password FROM usuarios_gacrux WHERE usuario = %s", (user_input,))
             usuario_bd = cursor.fetchone()
             cursor.close()
