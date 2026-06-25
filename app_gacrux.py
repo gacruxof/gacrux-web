@@ -56,27 +56,27 @@ HTML_LOGIN = """
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>GACRUX - Iniciar Sesión</title>
     <style>
         body { background-color: #121214; color: white; font-family: 'Segoe UI', Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-box { background: #1e1e24; padding: 35px 30px; border-radius: 8px; width: 90%; max-width: 360px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-bottom: 3px solid #1e3a8a; }
-        h2 { font-size: 1.5rem; margin-bottom: 5px; letter-spacing: 1px; }
-        p { color: #888; font-size: 0.9rem; margin-bottom: 25px; }
-        .input-group { position: relative; width: 100%; margin: 8px 0; }
-        input { width: 100%; padding: 12px; border: 1px solid #333; background: #26262b; color: white; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
-        input:focus { border-color: #1e3a8a; outline: none; }
+        .login-box { background: #1e1e24; padding: 35px 30px; border-radius: 12px; width: 90%; max-width: 360px; text-align: center; box-shadow: 0 8px 25px rgba(0,0,0,0.6); border-bottom: 4px solid #1e3a8a; }
+        h2 { font-size: 1.6rem; margin-bottom: 5px; letter-spacing: 1px; color: #89b4fa;}
+        p { color: #a6adc8; font-size: 0.95rem; margin-bottom: 25px; }
+        .input-group { position: relative; width: 100%; margin: 12px 0; }
+        input { width: 100%; padding: 14px; border: 1px solid #313244; background: #181825; color: white; border-radius: 6px; box-sizing: border-box; font-size: 1rem; transition: border 0.3s;}
+        input:focus { border-color: #89b4fa; outline: none; }
         .input-group input { padding-right: 45px; }
-        .btn-ojo { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #888; cursor: pointer; font-size: 1.1rem; padding: 5px; }
-        button[type="submit"] { width: 100%; padding: 12px; background: #1e3a8a; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 15px; font-size: 1rem; text-transform: uppercase; }
-        button[type="submit"]:hover { background: #1d4ed8; }
-        .error { color: #ff4a4a; font-size: 0.9rem; margin-top: 15px; font-weight: bold; }
+        .btn-ojo { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #888; cursor: pointer; font-size: 1.2rem; padding: 5px; }
+        button[type="submit"] { width: 100%; padding: 14px; background: #1e3a8a; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; margin-top: 15px; font-size: 1.1rem; text-transform: uppercase; box-shadow: 0 4px 0 #11111b; transition: 0.2s;}
+        button[type="submit"]:active { transform: translateY(4px); box-shadow: 0 0 0 #11111b; }
+        .error { color: #f38ba8; font-size: 0.9rem; margin-top: 15px; font-weight: bold; background: rgba(243, 139, 168, 0.1); padding: 10px; border-radius: 6px;}
     </style>
 </head>
 <body>
     <div class="login-box">
-        <h2>SISTEMA GACRUX</h2>
-        <p>Control de Almacén en Línea</p>
+        <h2>🚀 GACRUX</h2>
+        <p>Control de Almacén Móvil</p>
         <form method="POST">
             <div class="input-group">
                 <input type="text" name="usuario" placeholder="Usuario" required autocomplete="off">
@@ -85,7 +85,7 @@ HTML_LOGIN = """
                 <input type="password" id="password" name="password" placeholder="Contraseña" required>
                 <button type="button" class="btn-ojo" onclick="toggleOjoWeb()">👁️</button>
             </div>
-            <button type="submit">ENTRAR 🔓</button>
+            <button type="submit">ENTRAR</button>
         </form>
         {% with messages = get_flashed_messages() %}
           {% if messages %}
@@ -99,7 +99,7 @@ HTML_LOGIN = """
         function toggleOjoWeb() {
             const labelPass = document.getElementById('password');
             const btnOjo = document.querySelector('.btn-ojo');
-            if (labelPass.type === 'password') { labelPass.type = 'text'; btnOjo.style.color = '#1e3a8a'; } 
+            if (labelPass.type === 'password') { labelPass.type = 'text'; btnOjo.style.color = '#89b4fa'; } 
             else { labelPass.type = 'password'; btnOjo.style.color = '#888'; }
         }
     </script>
@@ -112,98 +112,145 @@ HTML_BASE = """
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GACRUX - Panel de Almacén</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GACRUX - Panel Móvil</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    <style id="theme-style">
+    <style>
+        /* CSS Variables - El secreto para el tema claro/oscuro perfecto */
         :root {
-            --bg-body: #1a1a1a;
-            --bg-card: #262626;
-            --bg-block: #1f1f1f;
-            --bg-table: #161616;
-            --bg-th: #282828;
-            --text-color: #ffffff;
-            --subtext-color: #777777;
-            --border-color: #333333;
-            --input-bg: #333333;
-            --input-border: #404040;
+            --bg-body: #11111b;
+            --bg-card: #1e1e2e;
+            --bg-block: #181825;
+            --bg-table: #1e1e2e;
+            --bg-th: #313244;
+            --text-main: #cdd6f4;
+            --text-muted: #a6adc8;
+            --border-color: #313244;
+            --input-bg: #11111b;
+            --input-border: #45475a;
+            --primary: #1e3a8a;
+            --danger: #e63946;
         }
         
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; transition: background 0.2s, color 0.2s; }
-        body { background-color: var(--bg-body); color: var(--text-color); padding: 15px; }
+        [data-theme="light"] {
+            --bg-body: #f4f6f9;
+            --bg-card: #ffffff;
+            --bg-block: #f8f9fa;
+            --bg-table: #ffffff;
+            --bg-th: #e2e8f0;
+            --text-main: #11111b;
+            --text-muted: #555555;
+            --border-color: #cbd5e1;
+            --input-bg: #f8f9fa;
+            --input-border: #cbd5e1;
+            --primary: #1d4ed8;
+            --danger: #dc2626;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; transition: background 0.3s, color 0.3s; }
+        body { background-color: var(--bg-body); color: var(--text-main); padding: 10px 15px; padding-top: 75px;}
         
-        header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 25px; padding: 15px 20px; background-color: var(--bg-card); border-radius: 6px; border-bottom: 3px solid #444444; gap: 15px; }
-        .header-info { text-align: left; }
-        .header-actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
-        h2 { color: #ffffff; font-size: 1.6rem; letter-spacing: 1px; margin-bottom: 4px;}
+        /* HEADER FIJO CON MENÚ DESPLEGABLE */
+        header { 
+            position: fixed; top: 0; left: 0; right: 0; height: 60px;
+            background-color: var(--bg-card); display: flex; justify-content: space-between; align-items: center; 
+            padding: 0 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 1000; border-bottom: 2px solid var(--primary);
+        }
+        .logo-title { font-size: 1.4rem; font-weight: 900; color: var(--primary); letter-spacing: 1px;}
         
-        .theme-toggle { padding: 8px 12px; font-size: 0.85rem; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; background-color: #444444; color: white; width: 100%;}
-        .logout-link { background-color: transparent; color: #ef233c; font-weight: bold; text-decoration: none; border: 1px solid #ef233c; padding: 6px 12px; border-radius: 4px; text-transform: uppercase; font-size: 0.85rem; text-align: center; width: 100%; display: block;}
-        .logout-link:hover { background-color: #ef233c; color: white; }
+        /* EL MENÚ DE PERFIL */
+        .profile-menu { position: relative; display: inline-block; }
+        .profile-btn { 
+            background: var(--bg-block); color: var(--text-main); font-size: 1.2rem; 
+            border: 1px solid var(--border-color); border-radius: 50%; width: 40px; height: 40px; 
+            display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .dropdown-content { 
+            display: none; position: absolute; right: 0; top: 50px; 
+            background-color: var(--bg-card); min-width: 220px; border-radius: 8px; 
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5); border: 1px solid var(--border-color); overflow: hidden;
+        }
+        .dropdown-content.show { display: block; }
+        .dropdown-header { padding: 15px; background: var(--bg-block); border-bottom: 1px solid var(--border-color); text-align: left; }
+        .dropdown-header strong { display: block; font-size: 1rem; color: var(--text-main); }
+        .dropdown-header span { font-size: 0.8rem; color: var(--primary); font-weight: bold; text-transform: uppercase;}
         
-        .container { max-width: 1100px; margin: 0 auto; }
-        .seccion { background-color: var(--bg-card); padding: 20px; border-radius: 6px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        h3 { margin-bottom: 15px; color: #ffffff; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .dropdown-content button, .dropdown-content a { 
+            width: 100%; padding: 12px 15px; text-decoration: none; display: block; 
+            text-align: left; background: none; border: none; font-size: 1rem; color: var(--text-main); font-weight: bold; cursor: pointer;
+        }
+        .dropdown-content button:active, .dropdown-content a:active { background-color: var(--bg-block); }
+        .logout-btn { color: var(--danger) !important; border-top: 1px solid var(--border-color) !important; }
+
+        /* CONTENEDORES Y TARJETAS */
+        .container { max-width: 1000px; margin: 0 auto; }
+        .seccion { background-color: var(--bg-card); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 1px solid var(--border-color);}
+        h3 { margin-bottom: 15px; color: var(--text-main); font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.5px; }
         
-        input[type="text"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); font-size: 1rem; margin-bottom: 15px; background-color: var(--input-bg); color: var(--text-color); }
-        input[type="text"]:focus { border-color: #888888; outline: none; }
+        input[type="text"] { width: 100%; padding: 14px; border-radius: 6px; border: 2px solid var(--input-border); font-size: 1rem; margin-bottom: 15px; background-color: var(--input-bg); color: var(--text-main); }
+        input[type="text"]:focus { border-color: var(--primary); outline: none; }
         
-        .btn { padding: 14px; border-radius: 4px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; }
+        .btn { padding: 14px; border-radius: 6px; border: none; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; box-shadow: 0 4px 0 rgba(0,0,0,0.2); }
+        .btn:active { transform: translateY(4px); box-shadow: 0 0 0 rgba(0,0,0,0); }
         .btn-full { width: 100%; }
-        .btn-baja { background-color: #444444; border: 1px solid #555555; }
-        .btn-camara { background-color: #1e3a8a; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;}
+        .btn-baja { background-color: var(--bg-block); border: 1px solid var(--border-color); color: var(--text-main);}
+        .btn-camara { background-color: var(--primary); margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;}
         
         #contenedor-lector { position: relative; width: 100%; max-width: 500px; margin: 0 auto 15px auto; display: none; }
-        #reader { width: 100%; border-radius: 8px; overflow: hidden; border: 2px solid #1e3a8a; background: black;}
-        .contador-escaner { position: absolute; top: 10px; right: 10px; background-color: #ef233c; color: white; padding: 6px 15px; border-radius: 20px; font-weight: 900; font-size: 1.5rem; display: none; z-index: 999; box-shadow: 0 4px 10px rgba(0,0,0,0.6); border: 2px solid white; transition: transform 0.15s ease-out; }
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; border: 2px solid var(--primary); background: black;}
+        .contador-escaner { position: absolute; top: 10px; right: 10px; background-color: var(--danger); color: white; padding: 6px 15px; border-radius: 20px; font-weight: 900; font-size: 1.5rem; display: none; z-index: 999; box-shadow: 0 4px 10px rgba(0,0,0,0.6); border: 2px solid white; transition: transform 0.15s ease-out; }
         
         #controles-camara { display: none; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
         .btn-disparar { background-color: #2e7d32; flex-grow: 1; font-size: 1.1rem; }
-        .btn-cerrar-cam { background-color: #7f1d1d; width: 35%; min-width: 120px; }
+        .btn-cerrar-cam { background-color: var(--danger); width: 35%; min-width: 120px; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        .contenedor-modelo { background-color: var(--bg-card); border-radius: 6px; padding: 20px; margin-bottom: 35px; border: 1px solid var(--input-border); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-        .header-modelo-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px 15px; border-radius: 4px; color: #ffffff; }
+        /* CATÁLOGO VISUAL REFINADO */
+        .contenedor-modelo { background-color: var(--bg-card); border-radius: 8px; padding: 15px; margin-bottom: 30px; border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .header-modelo-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 12px 15px; border-radius: 6px; color: #ffffff !important; }
         .mod-azul .header-modelo-flex { background-color: #1e3a8a; }
         .mod-rojo .header-modelo-flex { background-color: #7f1d1d; }
-        .titulo-modelo { font-size: 1.3rem; font-weight: bold; text-transform: uppercase; }
-        .total-modelo-top { font-size: 1.1rem; font-weight: bold; }
+        .titulo-modelo { font-size: 1.2rem; font-weight: 900; letter-spacing: 0.5px;}
+        .total-modelo-top { font-size: 1rem; font-weight: bold; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px;}
         
-        .bloque-estampado { margin-bottom: 25px; background-color: var(--bg-block); padding: 15px; border-radius: 4px; }
+        .bloque-estampado { margin-bottom: 20px; background-color: var(--bg-block); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);}
         .mod-azul .bloque-estampado { border-left: 5px solid #1e3a8a; }
         .mod-rojo .bloque-estampado { border-left: 5px solid #7f1d1d; }
-        .titulo-estampado { font-size: 1.2rem; font-weight: bold; color: var(--text-color); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .titulo-estampado { font-size: 1.1rem; font-weight: 900; color: var(--text-main); margin-bottom: 10px; text-transform: uppercase; }
         
-        .tabla-catalogo { width: 100%; border-collapse: collapse; text-align: center; background-color: var(--bg-table); }
-        .tabla-catalogo th { background-color: var(--bg-th); color: #999999; font-size: 0.85rem; font-weight: 600; padding: 8px; text-transform: uppercase; border: 1px solid var(--border-color); }
-        .tabla-catalogo td { padding: 8px 10px; font-size: 1rem; border: 1px solid var(--border-color); }
-        .col-color { text-align: left; font-weight: bold; color: var(--text-color); padding-left: 15px !important; }
+        .tabla-catalogo { width: 100%; border-collapse: collapse; text-align: center; background-color: var(--bg-table); border-radius: 6px; overflow: hidden;}
+        .tabla-catalogo th { background-color: var(--bg-th); color: var(--text-muted); font-size: 0.8rem; font-weight: bold; padding: 10px 5px; text-transform: uppercase; border-bottom: 2px solid var(--border-color); }
+        .tabla-catalogo td { padding: 10px 5px; font-size: 1rem; border-bottom: 1px solid var(--border-color); color: var(--text-main); font-weight: 600;}
+        .col-color { text-align: left; padding-left: 15px !important; }
         
-        .stock-num { font-weight: bold; color: var(--text-color); }
-        .editable { cursor: pointer; background-color: rgba(30, 58, 138, 0.1); border-radius: 3px; position: relative; }
-        .editable:hover { background-color: rgba(30, 58, 138, 0.3); color: #4ea8de; }
-        .input-inline-edit { width: 50px; text-align: center; background: #333; color: white; border: 1px solid #1e3a8a; border-radius: 3px; font-weight: bold; font-size: 1rem; padding: 2px 0; }
-        .stock-cero { color: #3d3d3d !important; font-weight: normal; }
-        .fila-totales-excel { width: 100%; padding: 8px 15px; background-color: var(--bg-block); font-size: 0.9rem; font-weight: bold; color: #e63946; border-top: 1px dashed #e63946; display: flex; justify-content: space-between; flex-wrap: wrap; }
+        .editable { cursor: pointer; position: relative; }
+        .editable:active { background-color: rgba(30, 58, 138, 0.2); }
+        .input-inline-edit { width: 45px; text-align: center; background: var(--input-bg); color: var(--text-main); border: 2px solid var(--primary); border-radius: 4px; font-weight: bold; font-size: 1rem; padding: 4px 0; outline: none;}
+        .stock-cero { color: var(--text-muted) !important; font-weight: normal; opacity: 0.5;}
+        
+        .fila-totales-excel { width: 100%; padding: 10px 15px; background-color: var(--bg-card); font-size: 0.9rem; font-weight: bold; color: var(--danger); border-top: 1px dashed var(--danger); display: flex; justify-content: space-between; flex-wrap: wrap; margin-top: 5px; border-radius: 4px;}
+        
+        /* Sticky Search Bar */
+        .sticky-search { position: sticky; top: 60px; z-index: 100; background: var(--bg-body); padding: 10px 0; margin-bottom: 10px;}
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="header-info">
-                <h2>SISTEMA GACRUX</h2>
-                <p style="font-size: 0.85rem; color: var(--subtext-color);">Control de Inventario Centralizado</p>
-                <div style="margin-top: 10px; font-size: 0.85rem;">
-                    👤 SESIÓN: <strong>{{ empleado }}</strong><br>
-                    🛡️ PUESTO: <span style="color: #4ea8de; font-weight: bold;">{{ puesto }}</span>
+    <header>
+        <div class="logo-title">🚀 GACRUX</div>
+        <div class="profile-menu">
+            <div class="profile-btn" onclick="toggleMenu()">👤</div>
+            <div class="dropdown-content" id="menuDropdown">
+                <div class="dropdown-header">
+                    <strong>{{ empleado }}</strong>
+                    <span>{{ puesto }}</span>
                 </div>
+                <button onclick="alternarTemaWeb()">🌗 Alternar Tema</button>
+                <a href="/logout" class="logout-btn">🚪 Cerrar Sesión</a>
             </div>
-            <div class="header-actions">
-                <button class="theme-toggle" onclick="alternarTemaWeb()">CAMBIAR TEMA ☀️</button>
-                <a class="logout-link" href="/logout">CERRAR SESIÓN 🚪</a>
-            </div>
-        </header>
+        </div>
+    </header>
 
+    <div class="container">
         <div class="seccion">
             <h3>Ajuste Rápido de Almacén</h3>
             <button class="btn btn-full btn-camara" id="btn-encender-cam" onclick="encenderScanner()"><span>📷</span> ENCENDER VISOR DE CÁMARA</button>
@@ -218,65 +265,77 @@ HTML_BASE = """
                 <button class="btn btn-disparar" id="btn-disparar" onclick="activarDisparo()">🎯 DISPARAR (LEER CÓDIGO)</button>
             </div>
 
-            <input type="text" id="codigo_barras" placeholder="O escribe el código de barras manualmente..." autocomplete="off">
+            <input type="text" id="codigo_barras" placeholder="O escribe el código manualmente..." autocomplete="off">
             <button class="btn btn-full btn-baja" onclick="procesarBaja()">Descontar 1 Unidad</button>
             <div id="notificacion"></div>
         </div>
 
         <div class="seccion">
-            <h3>Existencias en Tiempo Real</h3>
-            <input type="text" id="busqueda" placeholder="🔍 Filtrar por modelo, estampado o color..." onkeyup="buscarPrenda()">
+            <h3>Catálogo de Existencias</h3>
+            <div class="sticky-search">
+                <input type="text" id="busqueda" placeholder="🔍 Filtrar por modelo, color o estampado..." autocomplete="off">
+            </div>
             <div id="resultado_busqueda"></div>
         </div>
     </div>
 
     <script>
-        let modoOscuroActivo = true;
+        // === MENÚ DESPLEGABLE ===
+        function toggleMenu() { document.getElementById("menuDropdown").classList.toggle("show"); }
+        window.onclick = function(event) {
+            if (!event.target.matches('.profile-btn')) {
+                var dropdowns = document.getElementsByClassName("dropdown-content");
+                for (var i = 0; i < dropdowns.length; i++) {
+                    if (dropdowns[i].classList.contains('show')) dropdowns[i].classList.remove('show');
+                }
+            }
+        }
+
+        // === TEMA CLARO / OSCURO USANDO VARIABLES CSS ===
+        function alternarTemaWeb() {
+            const root = document.documentElement;
+            if (root.getAttribute('data-theme') === 'light') {
+                root.removeAttribute('data-theme');
+                localStorage.setItem('gacrux_theme', 'dark');
+            } else {
+                root.setAttribute('data-theme', 'light');
+                localStorage.setItem('gacrux_theme', 'light');
+            }
+        }
+        // Cargar tema guardado
+        if(localStorage.getItem('gacrux_theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
+
+        // === LÓGICA DE ESCÁNER (Se mantiene igual) ===
         const esAdmin = "{{ es_admin }}" === "True"; 
         let html5QrCode = null;
         let scannerActivoParaLeer = false; 
         let ultimoCodigoEscaneado = "";
         let contadorMismoCodigo = 0;
-        let motorAudioGlobal = null;
 
         function hacerBeep() {
             try {
                 let AudioContext = window.AudioContext || window.webkitAudioContext;
                 if (!AudioContext) return; 
-                if (!motorAudioGlobal) { motorAudioGlobal = new AudioContext(); }
-                if (motorAudioGlobal.state === 'suspended') { motorAudioGlobal.resume(); }
-                let osc = motorAudioGlobal.createOscillator();
-                let gain = motorAudioGlobal.createGain();
-                osc.connect(gain); gain.connect(motorAudioGlobal.destination);
-                osc.type = "square"; osc.frequency.setValueAtTime(850, motorAudioGlobal.currentTime);
-                gain.gain.setValueAtTime(0.1, motorAudioGlobal.currentTime);
-                osc.start(); osc.stop(motorAudioGlobal.currentTime + 0.15); 
+                let ctx = new AudioContext();
+                let osc = ctx.createOscillator(); let gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = "square"; osc.frequency.setValueAtTime(850, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.start(); osc.stop(ctx.currentTime + 0.15); 
             } catch(e) {}
         }
 
         function encenderScanner() {
-            const contenedorLector = document.getElementById('contenedor-lector');
-            const btnEncender = document.getElementById('btn-encender-cam');
-            const controlesCam = document.getElementById('controles-camara');
-            const inputCodigo = document.getElementById('codigo_barras');
-            
-            inputCodigo.setAttribute('readonly', 'true');
-            document.activeElement.blur(); 
-            contenedorLector.style.display = 'block'; 
-            btnEncender.style.display = 'none';
-            controlesCam.style.display = 'flex';
-            
-            ultimoCodigoEscaneado = ""; contadorMismoCodigo = 0;
-            document.getElementById('badge-contador').style.display = 'none';
+            document.getElementById('codigo_barras').setAttribute('readonly', 'true');
+            document.getElementById('contenedor-lector').style.display = 'block'; 
+            document.getElementById('btn-encender-cam').style.display = 'none';
+            document.getElementById('controles-camara').style.display = 'flex';
             
             html5QrCode = new Html5Qrcode("reader");
-            const config = { fps: 15, qrbox: { width: 250, height: 120 } }; 
-            
-            html5QrCode.start({ facingMode: "environment" }, config, 
+            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: { width: 250, height: 120 } }, 
                 (textoDecodificado) => {
                     if (scannerActivoParaLeer) {
-                        scannerActivoParaLeer = false; 
-                        hacerBeep(); 
+                        scannerActivoParaLeer = false; hacerBeep(); 
                         if (textoDecodificado === ultimoCodigoEscaneado) { contadorMismoCodigo++; } 
                         else { ultimoCodigoEscaneado = textoDecodificado; contadorMismoCodigo = 1; }
                         
@@ -284,17 +343,13 @@ HTML_BASE = """
                         badge.style.display = 'block'; badge.innerText = "x" + contadorMismoCodigo;
                         badge.style.transform = "scale(1.3)"; setTimeout(() => { badge.style.transform = "scale(1)"; }, 150);
                         
-                        inputCodigo.value = textoDecodificado;
+                        document.getElementById('codigo_barras').value = textoDecodificado;
                         const btnDisparar = document.getElementById('btn-disparar');
                         btnDisparar.innerHTML = "🎯 DISPARAR (LEER CÓDIGO)"; btnDisparar.style.backgroundColor = "#2e7d32";
                         procesarBaja();
                     }
-                },
-                (errorMensaje) => {}
-            ).catch(err => {
-                alert("Error al iniciar la cámara. Verifica permisos.");
-                apagarScanner();
-            });
+                }, (errorMensaje) => {}
+            );
         }
 
         function activarDisparo() {
@@ -305,41 +360,13 @@ HTML_BASE = """
         }
 
         function apagarScanner() {
-            const contenedorLector = document.getElementById('contenedor-lector');
-            const btnEncender = document.getElementById('btn-encender-cam');
-            const controlesCam = document.getElementById('controles-camara');
-            const inputCodigo = document.getElementById('codigo_barras');
-            inputCodigo.removeAttribute('readonly');
-            
+            document.getElementById('codigo_barras').removeAttribute('readonly');
             if (html5QrCode) {
                 html5QrCode.stop().then(() => {
-                    contenedorLector.style.display = 'none'; controlesCam.style.display = 'none'; btnEncender.style.display = 'flex';
-                    scannerActivoParaLeer = false; ultimoCodigoEscaneado = ""; contadorMismoCodigo = 0;
-                    document.getElementById('badge-contador').style.display = 'none';
-                    const btnDisparar = document.getElementById('btn-disparar');
-                    btnDisparar.innerHTML = "🎯 DISPARAR (LEER CÓDIGO)"; btnDisparar.style.backgroundColor = "#2e7d32";
+                    document.getElementById('contenedor-lector').style.display = 'none'; 
+                    document.getElementById('controles-camara').style.display = 'none'; 
+                    document.getElementById('btn-encender-cam').style.display = 'flex';
                 }).catch(err => {});
-            }
-        }
-
-        function alternarTemaWeb() {
-            modoOscuroActivo = !modoOscuroActivo;
-            const root = document.documentElement;
-            const btn = document.querySelector('.theme-toggle');
-            if (modoOscuroActivo) {
-                btn.innerText = "CAMBIAR TEMA ☀️";
-                root.style.setProperty('--bg-body', '#1a1a1a'); root.style.setProperty('--bg-card', '#262626');
-                root.style.setProperty('--bg-block', '#1f1f1f'); root.style.setProperty('--bg-table', '#161616');
-                root.style.setProperty('--bg-th', '#282828'); root.style.setProperty('--text-color', '#ffffff');
-                root.style.setProperty('--subtext-color', '#777777'); root.style.setProperty('--border-color', '#333333');
-                root.style.setProperty('--input-bg', '#333333'); root.style.setProperty('--input-border', '#404040');
-            } else {
-                btn.innerText = "CAMBIAR TEMA 🌙";
-                root.style.setProperty('--bg-body', '#f4f6f9'); root.style.setProperty('--bg-card', '#ffffff');
-                root.style.setProperty('--bg-block', '#f8f9fa'); root.style.setProperty('--bg-table', '#ffffff');
-                root.style.setProperty('--bg-th', '#e2e8f0'); root.style.setProperty('--text-color', '#000000');
-                root.style.setProperty('--subtext-color', '#555555'); root.style.setProperty('--border-color', '#cbd5e1');
-                root.style.setProperty('--input-bg', '#ffffff'); root.style.setProperty('--input-border', '#cbd5e1');
             }
         }
 
@@ -352,18 +379,107 @@ HTML_BASE = """
             }).then(res => res.json()).then(data => {
                 let notif = document.getElementById('notificacion');
                 if(data.status === 'ok') {
-                    notif.style.color = '#4caf50'; notif.innerText = "COINCIDENCIA: " + data.msg;
-                    buscarPrenda();
+                    notif.style.color = 'var(--success)'; notif.innerText = "COINCIDENCIA: " + data.msg;
+                    fetchCatalogo(); // Actualizar catálogo tras baja exitosa
                 } else {
-                    notif.style.color = '#e63946'; notif.innerText = "ERROR: " + data.msg;
+                    notif.style.color = 'var(--danger)'; notif.innerText = "ERROR: " + data.msg;
                 }
                 document.getElementById('codigo_barras').value = '';
-                if (document.getElementById('contenedor-lector').style.display !== 'block') { document.getElementById('codigo_barras').focus(); }
             });
         }
+        document.getElementById('codigo_barras').addEventListener('keypress', function(e) { if (e.key === 'Enter') procesarBaja(); });
 
-        document.getElementById('codigo_barras').addEventListener('keypress', function(e) { if (e.key === 'Enter') { procesarBaja(); } });
+        // === NUEVO MOTOR DE BÚSQUEDA INSTANTÁNEA ===
+        let dataGlobalCatalogo = [];
+        let textoBusquedaActual = "";
 
+        // Descarga los datos de Aiven en segundo plano
+        async function fetchCatalogo() {
+            if (document.querySelector('.input-inline-edit')) return; // No interrumpir si está editando
+            try {
+                let res = await fetch('/api/buscar');
+                dataGlobalCatalogo = await res.json();
+                renderizarCatalogo();
+            } catch(e) {}
+        }
+
+        // Filtra y dibuja localmente a la velocidad de la luz
+        function renderizarCatalogo() {
+            if (document.querySelector('.input-inline-edit')) return;
+            
+            let contenedor = document.getElementById('resultado_busqueda');
+            
+            // 1. Filtrar los datos en la memoria del celular
+            let datosFiltrados = dataGlobalCatalogo.filter(p => {
+                if (!textoBusquedaActual) return true;
+                let q = textoBusquedaActual.toLowerCase();
+                return p.modelo.toLowerCase().includes(q) || 
+                       p.estampado.toLowerCase().includes(q) || 
+                       p.color.toLowerCase().includes(q);
+            });
+
+            if (datosFiltrados.length === 0) {
+                contenedor.innerHTML = "<p style='text-align:center; color: var(--text-muted); margin-top: 20px;'>No se encontraron resultados.</p>";
+                return;
+            }
+
+            // 2. Agrupar por Modelo y Estampado
+            let estructura = {};
+            datosFiltrados.forEach(p => {
+                let mod = p.modelo.toUpperCase().trim(); 
+                let est = p.estampado.toUpperCase().trim(); 
+                if (!estructura[mod]) estructura[mod] = {};
+                if (!estructura[mod][est]) estructura[mod][est] = [];
+                estructura[mod][est].push(p);
+            });
+            
+            // 3. Generar el HTML
+            let htmlFinal = "";
+            let esAzul = true;
+            for (let mod in estructura) {
+                let totalLote = 0;
+                for (let est_k in estructura[mod]) { estructura[mod][est_k].forEach(p => { totalLote += (p.talla_ch + p.talla_m + p.talla_g + p.talla_eg); }); }
+                
+                let claseColor = esAzul ? 'mod-azul' : 'mod-rojo';
+                htmlFinal += `<div class="contenedor-modelo ${claseColor}"><div class="header-modelo-flex"><div class="titulo-modelo">${mod}</div><div class="total-modelo-top">${totalLote} PZAS</div></div>`;
+                
+                for (let est in estructura[mod]) {
+                    let sumCH = 0, sumM = 0, sumG = 0, sumEG = 0;
+                    estructura[mod][est].forEach(p => { sumCH += p.talla_ch; sumM += p.talla_m; sumG += p.talla_g; sumEG += p.talla_eg; });
+                    
+                    htmlFinal += `<div class="bloque-estampado"><div class="titulo-estampado">${est}</div><table class="tabla-catalogo"><thead><tr><th class="col-color">COLOR</th>
+                                        ${sumCH > 0 ? '<th style="width: 15%;">CH</th>' : ''}${sumM > 0 ? '<th style="width: 15%;">M</th>' : ''}
+                                        ${sumG > 0 ? '<th style="width: 15%;">G</th>' : ''}${sumEG > 0 ? '<th style="width: 15%;">EG</th>' : ''}</tr></thead><tbody>`;
+                    
+                    estructura[mod][est].forEach(p => {
+                        let claseEditable = esAdmin ? 'editable' : '';
+                        htmlFinal += `<tr><td class="col-color">${p.color.toUpperCase()}</td>
+                                ${sumCH > 0 ? `<td class="${claseEditable} ${p.talla_ch == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ch')">${p.talla_ch}</td>` : ''}
+                                ${sumM > 0 ? `<td class="${claseEditable} ${p.talla_m == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_m')">${p.talla_m}</td>` : ''}
+                                ${sumG > 0 ? `<td class="${claseEditable} ${p.talla_g == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_g')">${p.talla_g}</td>` : ''}
+                                ${sumEG > 0 ? `<td class="${claseEditable} ${p.talla_eg == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_eg')">${p.talla_eg}</td>` : ''}</tr>`;
+                    });
+                    
+                    let sumaTotalTabla = sumCH + sumM + sumG + sumEG;
+                    let partesTotales = [];
+                    if (sumCH > 0) partesTotales.push(`CH: ${sumCH}`); if (sumM > 0) partesTotales.push(`M: ${sumM}`);
+                    if (sumG > 0) partesTotales.push(`G: ${sumG}`); if (sumEG > 0) partesTotales.push(`EG: ${sumEG}`);
+                    htmlFinal += `</tbody></table><div class="fila-totales-excel"><div>${partesTotales.join(' &nbsp;|&nbsp; ')}</div><div>TOTAL: ${sumaTotalTabla}</div></div></div>`;
+                }
+                htmlFinal += `</div>`; esAzul = !esAzul;
+            }
+            contenedor.innerHTML = htmlFinal;
+        }
+
+        // Listener para el input: filtra instantáneamente al teclear
+        document.getElementById('busqueda').addEventListener('input', function(e) {
+            textoBusquedaActual = e.target.value.trim();
+            renderizarCatalogo();
+        });
+
+        // =====================================
+        // EDICIÓN EN LÍNEA
+        // =====================================
         function activarEdicionCelda(elemento, dbId, columnaSql) {
             if (!esAdmin || elemento.querySelector('input')) return; 
             let valorActual = elemento.innerText.trim();
@@ -378,69 +494,25 @@ HTML_BASE = """
                 fetch('/api/guardar_stock_web', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: dbId, columna: columnaSql, valor: parseInt(nuevoValor)})
                 }).then(res => res.json()).then(data => {
-                    if (data.status === 'ok') { buscarPrenda(); } 
-                    else { alert("Error al inyectar cambio: " + data.msg); elemento.innerHTML = valorActual; }
+                    if (data.status === 'ok') { fetchCatalogo(); } // Actualiza la BD completa silenciosamente
+                    else { alert("Error al guardar: " + data.msg); elemento.innerHTML = valorActual; }
                 });
             }
-            input.addEventListener('keypress', function(e) { if (e.key === 'Enter') { guardarCambioInmediato(); } });
+            input.addEventListener('keypress', function(e) { if (e.key === 'Enter') guardarCambioInmediato(); });
             input.addEventListener('focusout', guardarCambioInmediato);
         }
-
-        function buscarPrenda() {
-            if (document.querySelector('.input-inline-edit')) return; 
-            let query = document.getElementById('busqueda').value;
-            fetch('/api/buscar?q=' + query)
-            .then(res => res.json()).then(data => {
-                let contenedor = document.getElementById('resultado_busqueda'); contenedor.innerHTML = '';
-                let estructura = {};
-                data.forEach(p => {
-                    let mod = p.modelo.toUpperCase().trim(); let est = p.estampado.toUpperCase().trim(); 
-                    if (!estructura[mod]) { estructura[mod] = {}; }
-                    if (!estructura[mod][est]) { estructura[mod][est] = []; }
-                    estructura[mod][est].push(p);
-                });
-                
-                let esAzul = true;
-                for (let mod in estructura) {
-                    let totalLoteAcumulado = 0;
-                    for (let est_k in estructura[mod]) { estructura[mod][est_k].forEach(p => { totalLoteAcumulado += (p.talla_ch + p.talla_m + p.talla_g + p.talla_eg); }); }
-                    let claseColor = esAzul ? 'mod-azul' : 'mod-rojo';
-                    let htmlBlock = `<div class="contenedor-modelo ${claseColor}"><div class="header-modelo-flex"><div class="titulo-modelo">MODELO: ${mod}</div><div class="total-modelo-top">TOTAL LOTE: ${totalLoteAcumulado} pzas</div></div>`;
-                    
-                    for (let est in estructura[mod]) {
-                        let sumCH = 0, sumM = 0, sumG = 0, sumEG = 0;
-                        estructura[mod][est].forEach(p => { sumCH += p.talla_ch; sumM += p.talla_m; sumG += p.talla_g; sumEG += p.talla_eg; });
-                        htmlBlock += `<div class="bloque-estampado"><div class="titulo-estampado">${est}</div><table class="tabla-catalogo"><thead><tr><th style="text-align: left; padding-left: 15px;">Color</th>
-                                            ${sumCH > 0 ? '<th style="width: 13%;">CH</th>' : ''}${sumM > 0 ? '<th style="width: 13%;">M</th>' : ''}
-                                            ${sumG > 0 ? '<th style="width: 13%;">G</th>' : ''}${sumEG > 0 ? '<th style="width: 13%;">EG</th>' : ''}</tr></thead><tbody>`;
-                        
-                        estructura[mod][est].forEach(p => {
-                            let claseEditable = esAdmin ? 'editable' : '';
-                            htmlBlock += `<tr><td class="col-color">${p.color.toUpperCase()}</td>
-                                    ${sumCH > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_ch == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ch')">${p.talla_ch}</td>` : ''}
-                                    ${sumM > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_m == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_m')">${p.talla_m}</td>` : ''}
-                                    ${sumG > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_g == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_g')">${p.talla_g}</td>` : ''}
-                                    ${sumEG > 0 ? `<td class="stock-num ${claseEditable} ${p.talla_eg == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_eg')">${p.talla_eg}</td>` : ''}</tr>`;
-                        });
-                        
-                        let sumaTotalTabla = sumCH + sumM + sumG + sumEG;
-                        let partesTotales = [];
-                        if (sumCH > 0) partesTotales.push(`CH: ${sumCH}`); if (sumM > 0) partesTotales.push(`M: ${sumM}`);
-                        if (sumG > 0) partesTotales.push(`G: ${sumG}`); if (sumEG > 0) partesTotales.push(`EG: ${sumEG}`);
-                        htmlBlock += `</tbody></table><div class="fila-totales-excel"><div>${partesTotales.join(' &nbsp;|&nbsp; ')}</div><div>SUMA TOTAL: ${sumaTotalTabla}</div></div></div>`;
-                    }
-                    htmlBlock += `</div>`; contenedor.innerHTML += htmlBlock; esAzul = !esAzul;
-                }
-            });
-        }
         
-        buscarPrenda();
-        setInterval(function() { if(document.querySelector('.input-inline-edit')) { return; } buscarPrenda(); }, 2000);
+        // Ciclo de actualización en segundo plano (cada 4 segundos)
+        setInterval(fetchCatalogo, 4000);
+        fetchCatalogo(); // Carga inicial
     </script>
 </body>
 </html>
 """
 
+# ==================================
+# RUTAS DE FLASK 
+# ==================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -453,7 +525,6 @@ def login():
             usuario_bd = cursor.fetchone()
             cursor.close(); db.close()
             
-            # Validación CASE-SENSITIVE en Python
             if usuario_bd and usuario_bd['password'] == pass_input:
                 user_obj = UsuarioWeb(usuario_bd['id'], usuario_bd['usuario'], usuario_bd['nombre_real'], usuario_bd['rol_puesto'])
                 login_user(user_obj)
@@ -471,11 +542,10 @@ def index():
 @app.route('/api/buscar')
 @login_required
 def api_buscar():
-    q = request.args.get('q', '').strip()
+    # Ahora enviamos toda la base de datos de un golpe, el celular hará el filtrado
     db = conectar_bd()
     cursor = db.cursor(dictionary=True)
-    if q: cursor.execute("SELECT * FROM panel_stock WHERE modelo LIKE %s OR estampado LIKE %s OR color LIKE %s ORDER BY modelo ASC, estampado ASC, color ASC", (f"%{q}%", f"%{q}%", f"%{q}%"))
-    else: cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
+    cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
     resultados = cursor.fetchall()
     cursor.close(); db.close()
     return jsonify(resultados)
@@ -519,7 +589,6 @@ def api_baja():
         talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg'}
         col = talla_map.get(prenda['talla'].upper().strip())
         
-        # 🚀 RESTAURANDO LÓGICA CON ID INTERMEDIARIO:
         if col and prenda['panel_stock_id']:
             cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (prenda['panel_stock_id'],))
             res_stock = cursor.fetchone()
@@ -546,10 +615,10 @@ def api_baja():
                 return jsonify({'status': 'ok', 'msg': msg})
             else:
                 cursor.close(); db.close()
-                return jsonify({'status': 'error', 'msg': 'La prenda existe en inventario pero fue borrada del Catálogo Maestro.'})
+                return jsonify({'status': 'error', 'msg': 'Borrada del Catálogo Maestro.'})
                 
     cursor.close(); db.close()
-    return jsonify({'status': 'error', 'msg': 'Código de barras no válido o desconectado.'})
+    return jsonify({'status': 'error', 'msg': 'Código de barras no válido.'})
 
 @app.route('/logout')
 @login_required
