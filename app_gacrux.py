@@ -116,7 +116,6 @@ HTML_BASE = """
     <title>GACRUX - Panel Móvil</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
-        /* CSS Variables - El secreto para el tema claro/oscuro perfecto */
         :root {
             --bg-body: #11111b;
             --bg-card: #1e1e2e;
@@ -150,7 +149,6 @@ HTML_BASE = """
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; transition: background 0.3s, color 0.3s; }
         body { background-color: var(--bg-body); color: var(--text-main); padding: 10px 15px; padding-top: 75px;}
         
-        /* HEADER FIJO CON MENÚ DESPLEGABLE */
         header { 
             position: fixed; top: 0; left: 0; right: 0; height: 60px;
             background-color: var(--bg-card); display: flex; justify-content: space-between; align-items: center; 
@@ -158,7 +156,6 @@ HTML_BASE = """
         }
         .logo-title { font-size: 1.4rem; font-weight: 900; color: var(--primary); letter-spacing: 1px;}
         
-        /* EL MENÚ DE PERFIL */
         .profile-menu { position: relative; display: inline-block; }
         .profile-btn { 
             background: var(--bg-block); color: var(--text-main); font-size: 1.2rem; 
@@ -182,7 +179,6 @@ HTML_BASE = """
         .dropdown-content button:active, .dropdown-content a:active { background-color: var(--bg-block); }
         .logout-btn { color: var(--danger) !important; border-top: 1px solid var(--border-color) !important; }
 
-        /* CONTENEDORES Y TARJETAS */
         .container { max-width: 1000px; margin: 0 auto; }
         .seccion { background-color: var(--bg-card); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 1px solid var(--border-color);}
         h3 { margin-bottom: 15px; color: var(--text-main); font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -205,7 +201,6 @@ HTML_BASE = """
         .btn-cerrar-cam { background-color: var(--danger); width: 35%; min-width: 120px; }
         #notificacion { text-align: center; margin-top: 12px; font-weight: bold; font-size: 1rem; }
         
-        /* CATÁLOGO VISUAL REFINADO */
         .contenedor-modelo { background-color: var(--bg-card); border-radius: 8px; padding: 15px; margin-bottom: 30px; border: 1px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .header-modelo-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 12px 15px; border-radius: 6px; color: #ffffff !important; }
         .mod-azul .header-modelo-flex { background-color: #1e3a8a; }
@@ -230,7 +225,6 @@ HTML_BASE = """
         
         .fila-totales-excel { width: 100%; padding: 10px 15px; background-color: var(--bg-card); font-size: 0.9rem; font-weight: bold; color: var(--danger); border-top: 1px dashed var(--danger); display: flex; justify-content: space-between; flex-wrap: wrap; margin-top: 5px; border-radius: 4px;}
         
-        /* Sticky Search Bar */
         .sticky-search { position: sticky; top: 60px; z-index: 100; background: var(--bg-body); padding: 10px 0; margin-bottom: 10px;}
     </style>
 </head>
@@ -253,7 +247,7 @@ HTML_BASE = """
     <div class="container">
         <div class="seccion">
             <h3>Ajuste Rápido de Almacén</h3>
-            <button class="btn btn-full btn-camara" id="btn-encender-cam" onclick="encenderScanner()"><span>📷</span> ENCENDER VISOR DE CÁMARA</button>
+            <button class="btn btn-full btn-camara" id="btn-encender-cam" onclick="encenderScanner()"><span>📷</span> INICIAR CÁMARA ESCÁNER</button>
             
             <div id="contenedor-lector">
                 <div id="reader"></div>
@@ -302,10 +296,9 @@ HTML_BASE = """
                 localStorage.setItem('gacrux_theme', 'light');
             }
         }
-        // Cargar tema guardado
         if(localStorage.getItem('gacrux_theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
 
-        // === LÓGICA DE ESCÁNER (Se mantiene igual) ===
+        // === LÓGICA DE ESCÁNER BLINDADA PARA MULTIPLES CÁMARAS ===
         const esAdmin = "{{ es_admin }}" === "True"; 
         let html5QrCode = null;
         let scannerActivoParaLeer = false; 
@@ -332,7 +325,39 @@ HTML_BASE = """
             document.getElementById('controles-camara').style.display = 'flex';
             
             html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: { width: 250, height: 120 } }, 
+            const config = { fps: 10, qrbox: { width: 250, height: 120 } };
+
+            // Forzar búsqueda manual de cámaras para evitar la pantalla negra en móviles
+            Html5Qrcode.getCameras().then(devices => {
+                if (devices && devices.length) {
+                    let cameraId = devices[0].id;
+                    
+                    // Buscar si hay una cámara etiquetada como "back" o "environment"
+                    for (let i = 0; i < devices.length; i++) {
+                        let lbl = devices[i].label.toLowerCase();
+                        if (lbl.includes("back") || lbl.includes("trasera") || lbl.includes("environment")) {
+                            cameraId = devices[i].id;
+                            // En móviles de múltiples cámaras no rompemos el ciclo, a veces la última trasera es la correcta
+                        }
+                    }
+                    
+                    // Si no dice back pero hay más de una, casi siempre la trasera es la última
+                    if (cameraId === devices[0].id && devices.length > 1) {
+                        cameraId = devices[devices.length - 1].id;
+                    }
+
+                    iniciarLecturaConId(cameraId, config);
+                } else {
+                    // Fallback normal por si falla getCameras
+                    iniciarLecturaConId({ facingMode: "environment" }, config);
+                }
+            }).catch(err => {
+                iniciarLecturaConId({ facingMode: "environment" }, config);
+            });
+        }
+
+        function iniciarLecturaConId(idCamara, config) {
+            html5QrCode.start(idCamara, config, 
                 (textoDecodificado) => {
                     if (scannerActivoParaLeer) {
                         scannerActivoParaLeer = false; hacerBeep(); 
@@ -349,7 +374,18 @@ HTML_BASE = """
                         procesarBaja();
                     }
                 }, (errorMensaje) => {}
-            );
+            ).catch(err => {
+                // Si la cámara seleccionada falla, intentamos el fallback genérico
+                if(idCamara !== { facingMode: "environment" }) {
+                    html5QrCode.start({ facingMode: "environment" }, config, () => {}, () => {}).catch(e => {
+                        alert("Error al iniciar la cámara. Verifica permisos del navegador.");
+                        apagarScanner();
+                    });
+                } else {
+                    alert("Error al iniciar la cámara. Verifica permisos del navegador.");
+                    apagarScanner();
+                }
+            });
         }
 
         function activarDisparo() {
@@ -380,7 +416,7 @@ HTML_BASE = """
                 let notif = document.getElementById('notificacion');
                 if(data.status === 'ok') {
                     notif.style.color = 'var(--success)'; notif.innerText = "COINCIDENCIA: " + data.msg;
-                    fetchCatalogo(); // Actualizar catálogo tras baja exitosa
+                    fetchCatalogo(); 
                 } else {
                     notif.style.color = 'var(--danger)'; notif.innerText = "ERROR: " + data.msg;
                 }
@@ -389,13 +425,12 @@ HTML_BASE = """
         }
         document.getElementById('codigo_barras').addEventListener('keypress', function(e) { if (e.key === 'Enter') procesarBaja(); });
 
-        // === NUEVO MOTOR DE BÚSQUEDA INSTANTÁNEA ===
+        // === MOTOR DE BÚSQUEDA INSTANTÁNEA ===
         let dataGlobalCatalogo = [];
         let textoBusquedaActual = "";
 
-        // Descarga los datos de Aiven en segundo plano
         async function fetchCatalogo() {
-            if (document.querySelector('.input-inline-edit')) return; // No interrumpir si está editando
+            if (document.querySelector('.input-inline-edit')) return; 
             try {
                 let res = await fetch('/api/buscar');
                 dataGlobalCatalogo = await res.json();
@@ -403,13 +438,10 @@ HTML_BASE = """
             } catch(e) {}
         }
 
-        // Filtra y dibuja localmente a la velocidad de la luz
         function renderizarCatalogo() {
             if (document.querySelector('.input-inline-edit')) return;
-            
             let contenedor = document.getElementById('resultado_busqueda');
             
-            // 1. Filtrar los datos en la memoria del celular
             let datosFiltrados = dataGlobalCatalogo.filter(p => {
                 if (!textoBusquedaActual) return true;
                 let q = textoBusquedaActual.toLowerCase();
@@ -423,7 +455,6 @@ HTML_BASE = """
                 return;
             }
 
-            // 2. Agrupar por Modelo y Estampado
             let estructura = {};
             datosFiltrados.forEach(p => {
                 let mod = p.modelo.toUpperCase().trim(); 
@@ -433,7 +464,6 @@ HTML_BASE = """
                 estructura[mod][est].push(p);
             });
             
-            // 3. Generar el HTML
             let htmlFinal = "";
             let esAzul = true;
             for (let mod in estructura) {
@@ -471,7 +501,6 @@ HTML_BASE = """
             contenedor.innerHTML = htmlFinal;
         }
 
-        // Listener para el input: filtra instantáneamente al teclear
         document.getElementById('busqueda').addEventListener('input', function(e) {
             textoBusquedaActual = e.target.value.trim();
             renderizarCatalogo();
@@ -494,7 +523,7 @@ HTML_BASE = """
                 fetch('/api/guardar_stock_web', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: dbId, columna: columnaSql, valor: parseInt(nuevoValor)})
                 }).then(res => res.json()).then(data => {
-                    if (data.status === 'ok') { fetchCatalogo(); } // Actualiza la BD completa silenciosamente
+                    if (data.status === 'ok') { fetchCatalogo(); } 
                     else { alert("Error al guardar: " + data.msg); elemento.innerHTML = valorActual; }
                 });
             }
@@ -502,17 +531,13 @@ HTML_BASE = """
             input.addEventListener('focusout', guardarCambioInmediato);
         }
         
-        // Ciclo de actualización en segundo plano (cada 4 segundos)
         setInterval(fetchCatalogo, 4000);
-        fetchCatalogo(); // Carga inicial
+        fetchCatalogo(); 
     </script>
 </body>
 </html>
 """
 
-# ==================================
-# RUTAS DE FLASK 
-# ==================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -542,7 +567,6 @@ def index():
 @app.route('/api/buscar')
 @login_required
 def api_buscar():
-    # Ahora enviamos toda la base de datos de un golpe, el celular hará el filtrado
     db = conectar_bd()
     cursor = db.cursor(dictionary=True)
     cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
@@ -618,7 +642,7 @@ def api_baja():
                 return jsonify({'status': 'error', 'msg': 'Borrada del Catálogo Maestro.'})
                 
     cursor.close(); db.close()
-    return jsonify({'status': 'error', 'msg': 'Código de barras no válido.'})
+    return jsonify({'status': 'error', 'msg': 'Código de barras no válido o desconectado.'})
 
 @app.route('/logout')
 @login_required
