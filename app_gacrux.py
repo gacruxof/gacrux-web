@@ -51,7 +51,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# AQUÍ VAN TUS VARIABLES HTML_LOGIN Y HTML_BASE QUE YA TENÍAS (LAS DEJO INTACTAS)
+# INTERFACES WEB (HTML)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -535,7 +535,7 @@ HTML_BASE = """
 """
 
 # ==============================================================================
-# LAS RUTAS DE SIEMPRE
+# RUTAS WEB PRINCIPALES
 # ==============================================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -650,7 +650,7 @@ def logout():
     return redirect(url_for('login'))
 
 # ==============================================================================
-# NUEVAS RUTAS EXCLUSIVAS PARA LA APP DE FLUTTER (API REST)
+# NUEVAS RUTAS EXCLUSIVAS PARA LA APP DE FLUTTER (API REST MÓVIL)
 # ==============================================================================
 
 @app.route('/api/login', methods=['POST'])
@@ -668,7 +668,6 @@ def api_login():
         cursor.close(); db.close()
         
         if usuario_bd and usuario_bd['password'] == pass_input:
-            # Generamos un token básico para que la app lo guarde
             token_sencillo = f"gacrux-auth-{usuario_bd['id']}"
             return jsonify({
                 'token': token_sencillo,
@@ -683,7 +682,6 @@ def api_login():
 @app.route('/api/inventario/descontar', methods=['POST'])
 def api_descontar():
     """Ruta para que Flutter descuente stock usando la cámara nativa"""
-    # Verifica que traiga un token válido
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"):
         return jsonify({'error': 'Acceso no autorizado a la API'}), 401
@@ -723,6 +721,7 @@ def api_descontar():
         return jsonify({'error': 'Código inválido o ya no hay stock disponible'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 @app.route('/api/app/inventario', methods=['GET'])
 def api_app_inventario():
     """Ruta exclusiva para que Flutter descargue el catálogo con Token"""
@@ -740,6 +739,10 @@ def api_app_inventario():
         return jsonify(resultados)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
+# INICIO DE LA APLICACIÓN
+# ==============================================================================
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
