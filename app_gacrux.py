@@ -723,7 +723,23 @@ def api_descontar():
         return jsonify({'error': 'Código inválido o ya no hay stock disponible'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
+@app.route('/api/app/inventario', methods=['GET'])
+def api_app_inventario():
+    """Ruta exclusiva para que Flutter descargue el catálogo con Token"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"):
+        return jsonify({'error': 'Acceso no autorizado'}), 401
+    
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
+        resultados = cursor.fetchall()
+        cursor.close()
+        db.close()
+        return jsonify(resultados)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
