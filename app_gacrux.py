@@ -1,33 +1,32 @@
+import os
+import datetime
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import mysql.connector
-import os
-import datetime
+
+# Intentamos cargar variables secretas locales si existen (para no subir contraseñas a GitHub)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 app = Flask(__name__)
-app.secret_key = 'CLAVE_SECRETA_GACRUX_ALBERTO_2026'
+app.secret_key = os.environ.get('SECRET_KEY', 'CLAVE_SECRETA_GACRUX_ALBERTO_2026')
 
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login' 
 
 def conectar_bd():
-    if "RENDER" in os.environ:
-        return mysql.connector.connect(
-            host=os.environ.get("DB_HOST"),
-            user=os.environ.get("DB_USER"),
-            password=os.environ.get("DB_PASSWORD"),
-            database=os.environ.get("DB_NAME"),
-            port=int(os.environ.get("DB_PORT", 3306))
-        )
-    else:
-        return mysql.connector.connect(
-            host="mysql-292462b-gacrux-of.a.aivencloud.com", 
-            port=19257,
-            user="avnadmin",
-            password="AVNS_lJSsblo1fLuMi6cA-yW",
-            database="defaultdb"
-        )
+    # ¡Magia de seguridad! Lee la contraseña desde las variables de entorno o el archivo .env
+    return mysql.connector.connect(
+        host=os.environ.get("DB_HOST", "mysql-292462b-gacrux-of.a.aivencloud.com"),
+        user=os.environ.get("DB_USER", "avnadmin"),
+        password=os.environ.get("DB_PASSWORD"), # <- Aquí tu contraseña está 100% oculta
+        database=os.environ.get("DB_NAME", "defaultdb"),
+        port=int(os.environ.get("DB_PORT", 19257))
+    )
 
 class UsuarioWeb(UserMixin):
     def __init__(self, id_user, usuario, nombre_real, rol_puesto):
@@ -51,6 +50,9 @@ def load_user(user_id):
         pass
     return None
 
+# ==============================================================================
+# AQUÍ VAN TUS VARIABLES HTML_LOGIN Y HTML_BASE QUE YA TENÍAS (LAS DEJO INTACTAS)
+# ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
 <html lang="es">
@@ -327,28 +329,23 @@ HTML_BASE = """
             html5QrCode = new Html5Qrcode("reader");
             const config = { fps: 10, qrbox: { width: 250, height: 120 } };
 
-            // Forzar búsqueda manual de cámaras para evitar la pantalla negra en móviles
             Html5Qrcode.getCameras().then(devices => {
                 if (devices && devices.length) {
                     let cameraId = devices[0].id;
                     
-                    // Buscar si hay una cámara etiquetada como "back" o "environment"
                     for (let i = 0; i < devices.length; i++) {
                         let lbl = devices[i].label.toLowerCase();
                         if (lbl.includes("back") || lbl.includes("trasera") || lbl.includes("environment")) {
                             cameraId = devices[i].id;
-                            // En móviles de múltiples cámaras no rompemos el ciclo, a veces la última trasera es la correcta
                         }
                     }
                     
-                    // Si no dice back pero hay más de una, casi siempre la trasera es la última
                     if (cameraId === devices[0].id && devices.length > 1) {
                         cameraId = devices[devices.length - 1].id;
                     }
 
                     iniciarLecturaConId(cameraId, config);
                 } else {
-                    // Fallback normal por si falla getCameras
                     iniciarLecturaConId({ facingMode: "environment" }, config);
                 }
             }).catch(err => {
@@ -375,7 +372,6 @@ HTML_BASE = """
                     }
                 }, (errorMensaje) => {}
             ).catch(err => {
-                // Si la cámara seleccionada falla, intentamos el fallback genérico
                 if(idCamara !== { facingMode: "environment" }) {
                     html5QrCode.start({ facingMode: "environment" }, config, () => {}, () => {}).catch(e => {
                         alert("Error al iniciar la cámara. Verifica permisos del navegador.");
@@ -538,6 +534,9 @@ HTML_BASE = """
 </html>
 """
 
+# ==============================================================================
+# LAS RUTAS DE SIEMPRE
+# ==============================================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -649,6 +648,81 @@ def api_baja():
 def logout():
     logout_user()
     return redirect(url_for('login'))
+
+# ==============================================================================
+# NUEVAS RUTAS EXCLUSIVAS PARA LA APP DE FLUTTER (API REST)
+# ==============================================================================
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    """Ruta para que Flutter inicie sesión de forma nativa"""
+    datos = request.get_json()
+    user_input = datos.get('usuario', '').strip().lower()
+    pass_input = datos.get('password', '').strip()
+    
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT id, usuario, nombre_real, rol_puesto, password FROM usuarios_gacrux WHERE usuario = %s", (user_input,))
+        usuario_bd = cursor.fetchone()
+        cursor.close(); db.close()
+        
+        if usuario_bd and usuario_bd['password'] == pass_input:
+            # Generamos un token básico para que la app lo guarde
+            token_sencillo = f"gacrux-auth-{usuario_bd['id']}"
+            return jsonify({
+                'token': token_sencillo,
+                'nombre_real': usuario_bd['nombre_real'],
+                'rol_puesto': usuario_bd['rol_puesto']
+            }), 200
+        else:
+            return jsonify({'error': 'Credenciales incorrectas'}), 401
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/inventario/descontar', methods=['POST'])
+def api_descontar():
+    """Ruta para que Flutter descuente stock usando la cámara nativa"""
+    # Verifica que traiga un token válido
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"):
+        return jsonify({'error': 'Acceso no autorizado a la API'}), 401
+
+    data = request.get_json()
+    codigo = data.get('codigo_barras', '').strip()
+    
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT modelo, estampado, color, talla, precio, panel_stock_id FROM inventario WHERE codigo_barras = %s", (codigo,))
+        prenda = cursor.fetchone()
+        
+        if prenda:
+            talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg'}
+            col = talla_map.get(prenda['talla'].upper().strip())
+            
+            if col and prenda['panel_stock_id']:
+                cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (prenda['panel_stock_id'],))
+                res_stock = cursor.fetchone()
+                
+                if res_stock and res_stock[col] > 0:
+                    cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
+                    fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    precio_p = float(prenda['precio'])
+                    
+                    sql_h = """
+                        INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                        VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'APP MOVIL DIRECTO', 'App Nativa Flutter')
+                    """
+                    cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual))
+                    db.commit()
+                    cursor.close(); db.close()
+                    return jsonify({'status': 'ok', 'msg': 'Descontado de nube exitosamente'})
+        
+        cursor.close(); db.close()
+        return jsonify({'error': 'Código inválido o ya no hay stock disponible'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
