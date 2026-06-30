@@ -4,7 +4,7 @@ from flask import Flask, render_template_string, request, jsonify, redirect, url
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import mysql.connector
 
-# Intentamos cargar variables secretas locales si existen (para no subir contraseñas a GitHub)
+# Intentamos cargar variables secretas locales si existen
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -12,18 +12,18 @@ except ImportError:
     pass
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'CLAVE_SECRETA_GACRUX_ALBERTO_2026')
+# Muy bien pensado lo del JWT_SECRET, lo usaremos como llave secreta general
+app.secret_key = os.environ.get('JWT_SECRET', os.environ.get('SECRET_KEY', 'CLAVE_SECRETA_GACRUX_ALBERTO_2026'))
 
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login' 
 
 def conectar_bd():
-    # ¡Magia de seguridad! Lee la contraseña desde las variables de entorno o el archivo .env
     return mysql.connector.connect(
         host=os.environ.get("DB_HOST", "mysql-292462b-gacrux-of.a.aivencloud.com"),
         user=os.environ.get("DB_USER", "avnadmin"),
-        password=os.environ.get("DB_PASSWORD"), # <- Aquí tu contraseña está 100% oculta
+        password=os.environ.get("DB_PASSWORD"), 
         database=os.environ.get("DB_NAME", "defaultdb"),
         port=int(os.environ.get("DB_PORT", 19257))
     )
@@ -51,7 +51,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# INTERFACES WEB (HTML)
+# HTML (Tus variables HTML_LOGIN y HTML_BASE)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -300,7 +300,7 @@ HTML_BASE = """
         }
         if(localStorage.getItem('gacrux_theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
 
-        // === LÓGICA DE ESCÁNER BLINDADA PARA MULTIPLES CÁMARAS ===
+        // === LÓGICA DE ESCÁNER ===
         const esAdmin = "{{ es_admin }}" === "True"; 
         let html5QrCode = null;
         let scannerActivoParaLeer = false; 
@@ -332,18 +332,15 @@ HTML_BASE = """
             Html5Qrcode.getCameras().then(devices => {
                 if (devices && devices.length) {
                     let cameraId = devices[0].id;
-                    
                     for (let i = 0; i < devices.length; i++) {
                         let lbl = devices[i].label.toLowerCase();
                         if (lbl.includes("back") || lbl.includes("trasera") || lbl.includes("environment")) {
                             cameraId = devices[i].id;
                         }
                     }
-                    
                     if (cameraId === devices[0].id && devices.length > 1) {
                         cameraId = devices[devices.length - 1].id;
                     }
-
                     iniciarLecturaConId(cameraId, config);
                 } else {
                     iniciarLecturaConId({ facingMode: "environment" }, config);
@@ -421,7 +418,6 @@ HTML_BASE = """
         }
         document.getElementById('codigo_barras').addEventListener('keypress', function(e) { if (e.key === 'Enter') procesarBaja(); });
 
-        // === MOTOR DE BÚSQUEDA INSTANTÁNEA ===
         let dataGlobalCatalogo = [];
         let textoBusquedaActual = "";
 
@@ -502,9 +498,6 @@ HTML_BASE = """
             renderizarCatalogo();
         });
 
-        // =====================================
-        // EDICIÓN EN LÍNEA
-        // =====================================
         function activarEdicionCelda(elemento, dbId, columnaSql) {
             if (!esAdmin || elemento.querySelector('input')) return; 
             let valorActual = elemento.innerText.trim();
@@ -740,9 +733,6 @@ def api_app_inventario():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ==============================================================================
-# INICIO DE LA APLICACIÓN
-# ==============================================================================
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
