@@ -4,7 +4,6 @@ from flask import Flask, render_template_string, request, jsonify, redirect, url
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import mysql.connector
 
-# Intentamos cargar variables secretas locales si existen
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -12,7 +11,6 @@ except ImportError:
     pass
 
 app = Flask(__name__)
-# Muy bien pensado lo del JWT_SECRET, lo usaremos como llave secreta general
 app.secret_key = os.environ.get('JWT_SECRET', os.environ.get('SECRET_KEY', 'CLAVE_SECRETA_GACRUX_ALBERTO_2026'))
 
 login_manager = LoginManager()
@@ -51,7 +49,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# HTML (Tus variables HTML_LOGIN y HTML_BASE)
+# HTML WEB (INTACTO)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -276,7 +274,6 @@ HTML_BASE = """
     </div>
 
     <script>
-        // === MENÚ DESPLEGABLE ===
         function toggleMenu() { document.getElementById("menuDropdown").classList.toggle("show"); }
         window.onclick = function(event) {
             if (!event.target.matches('.profile-btn')) {
@@ -287,7 +284,6 @@ HTML_BASE = """
             }
         }
 
-        // === TEMA CLARO / OSCURO USANDO VARIABLES CSS ===
         function alternarTemaWeb() {
             const root = document.documentElement;
             if (root.getAttribute('data-theme') === 'light') {
@@ -300,7 +296,6 @@ HTML_BASE = """
         }
         if(localStorage.getItem('gacrux_theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
 
-        // === LÓGICA DE ESCÁNER ===
         const esAdmin = "{{ es_admin }}" === "True"; 
         let html5QrCode = null;
         let scannerActivoParaLeer = false; 
@@ -528,7 +523,7 @@ HTML_BASE = """
 """
 
 # ==============================================================================
-# RUTAS WEB PRINCIPALES
+# RUTAS WEB PRINCIPALES (INTACTAS)
 # ==============================================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -615,7 +610,6 @@ def api_baja():
                     return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
                     
                 cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
-                
                 fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 precio_p = float(prenda['precio'])
                 
@@ -643,16 +637,14 @@ def logout():
     return redirect(url_for('login'))
 
 # ==============================================================================
-# NUEVAS RUTAS EXCLUSIVAS PARA LA APP DE FLUTTER (API REST MÓVIL)
+# RUTAS DE LA APP MÓVIL Y NUEVO MODO DESARROLLADOR
 # ==============================================================================
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
-    """Ruta para que Flutter inicie sesión de forma nativa"""
     datos = request.get_json()
     user_input = datos.get('usuario', '').strip().lower()
     pass_input = datos.get('password', '').strip()
-    
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
@@ -669,16 +661,12 @@ def api_login():
             }), 200
         else:
             return jsonify({'error': 'Credenciales incorrectas'}), 401
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/inventario/descontar', methods=['POST'])
 def api_descontar():
-    """Ruta para que Flutter descuente stock usando la cámara nativa"""
     auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"):
-        return jsonify({'error': 'Acceso no autorizado a la API'}), 401
-
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'Acceso no autorizado a la API'}), 401
     data = request.get_json()
     codigo = data.get('codigo_barras', '').strip()
     
@@ -691,47 +679,201 @@ def api_descontar():
         if prenda:
             talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg'}
             col = talla_map.get(prenda['talla'].upper().strip())
-            
             if col and prenda['panel_stock_id']:
                 cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (prenda['panel_stock_id'],))
                 res_stock = cursor.fetchone()
-                
                 if res_stock and res_stock[col] > 0:
                     cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
                     fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     precio_p = float(prenda['precio'])
-                    
-                    sql_h = """
-                        INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
-                        VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'APP MOVIL DIRECTO', 'App Nativa Flutter')
-                    """
-                    cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual))
+                    cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'APP MOVIL DIRECTO', 'App Nativa Flutter')", 
+                                   (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual))
                     db.commit()
                     cursor.close(); db.close()
                     return jsonify({'status': 'ok', 'msg': 'Descontado de nube exitosamente'})
-        
         cursor.close(); db.close()
         return jsonify({'error': 'Código inválido o ya no hay stock disponible'}), 400
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/app/inventario', methods=['GET'])
 def api_app_inventario():
-    """Ruta exclusiva para que Flutter descargue el catálogo con Token"""
     auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"):
-        return jsonify({'error': 'Acceso no autorizado'}), 401
-    
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'Acceso no autorizado'}), 401
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
+        # Traerá también las nuevas columnas automáticamente
         cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
         resultados = cursor.fetchall()
-        cursor.close()
-        db.close()
+        cursor.close(); db.close()
         return jsonify(resultados)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
+# RUTAS DE ADMINISTRADOR (NUEVAS)
+# ==============================================================================
+def generar_codigo_13_digitos(cursor, modelo, estampado, color, talla):
+    """Generador Oficial Gacrux de 13 dígitos para la App"""
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
+    res_mod = cursor.fetchone()
+    if res_mod and res_mod['mod_id'] and res_mod['mod_id'].isdigit(): mod_str = res_mod['mod_id']
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 1, 5) AS UNSIGNED)) AS max_mod FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'")
+        res_max_mod = cursor.fetchone()
+        max_m = res_max_mod['max_mod'] if res_max_mod and res_max_mod['max_mod'] else 0
+        mod_str = f"{max_m + 1:05d}"
+
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 6, 5) AS est_id FROM inventario WHERE modelo = %s AND estampado = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo, estampado))
+    res_est = cursor.fetchone()
+    if res_est and res_est['est_id'] and res_est['est_id'].isdigit(): est_str = res_est['est_id']
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 6, 5) AS UNSIGNED)) AS max_est FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'", (modelo,))
+        res_max_est = cursor.fetchone()
+        max_e = res_max_est['max_est'] if res_max_est and res_max_est['max_est'] else 0
+        est_str = f"{max_e + 1:05d}"
+
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 11, 2) AS col_id FROM inventario WHERE modelo = %s AND estampado = %s AND color = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo, estampado, color))
+    res_col = cursor.fetchone()
+    if res_col and res_col['col_id'] and res_col['col_id'].isdigit(): col_str = res_col['col_id']
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 11, 2) AS UNSIGNED)) AS max_col FROM inventario WHERE modelo = %s AND estampado = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'", (modelo, estampado))
+        res_max_col = cursor.fetchone()
+        max_c = res_max_col['max_col'] if res_max_col and res_max_col['max_col'] else 0
+        col_str = f"{max_c + 1:02d}"
+
+    talla_id = {'CH': 1, 'M': 2, 'G': 3}.get(talla.upper(), 4)
+    return f"{mod_str}{est_str}{col_str}{talla_id:01d}"
+
+@app.route('/api/app/subir_lote', methods=['POST'])
+def api_subir_lote():
+    """Ruta para que la App registre modelos nuevos (Modo Desarrollador)"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
+        
+    data = request.get_json()
+    modelo = data.get('modelo', '').strip().upper()
+    estampado = data.get('estampado', '').strip().upper()
+    color = data.get('color', '').strip().upper()
+    precio = float(data.get('precio', 250.0))
+    tallas = data.get('tallas', {})
+    
+    genero = data.get('genero', 'TODO').strip().upper()
+    estilo = data.get('estilo', 'NORMAL').strip().upper()
+    tipo_prenda = data.get('tipo_prenda', 'SUDADERA').strip().upper()
+    
+    if not modelo or not estampado or not color: return jsonify({'error': 'Faltan datos obligatorios'}), 400
+        
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        
+        cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo, estampado, color))
+        res = cursor.fetchone()
+        
+        ch, m, g, eg = tallas.get('CH', 0), tallas.get('M', 0), tallas.get('G', 0), tallas.get('EG', 0)
+        
+        if res:
+            cursor.execute("""
+                UPDATE panel_stock 
+                SET talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_eg=talla_eg+%s,
+                    genero=%s, estilo=%s, tipo_prenda=%s
+                WHERE id=%s
+            """, (ch, m, g, eg, genero, estilo, tipo_prenda, res['id']))
+            panel_id = res['id']
+        else:
+            cursor.execute("""
+                INSERT INTO panel_stock (modelo, estampado, color, talla_ch, talla_m, talla_g, talla_eg, genero, estilo, tipo_prenda) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (modelo, estampado, color, ch, m, g, eg, genero, estilo, tipo_prenda))
+            panel_id = cursor.lastrowid
+            
+        tallas_ingresadas = []
+        if ch > 0: tallas_ingresadas.append(('CH', ch))
+        if m > 0: tallas_ingresadas.append(('M', m))
+        if g > 0: tallas_ingresadas.append(('G', g))
+        if eg > 0: tallas_ingresadas.append(('EG', eg))
+        
+        codigos_generados = []
+        total_ingresado = 0
+        
+        for talla_str, cantidad in tallas_ingresadas:
+            cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo, estampado, color, talla_str))
+            ex = cursor.fetchone()
+            if ex:
+                codigo_final = ex['codigo_barras']
+                cursor.execute("UPDATE inventario SET genero=%s, estilo=%s, tipo_prenda=%s WHERE codigo_barras=%s", (genero, estilo, tipo_prenda, codigo_final))
+            else:
+                codigo_final = generar_codigo_13_digitos(cursor, modelo, estampado, color, talla_str)
+                cursor.execute("""
+                    INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (codigo_final, modelo, estampado, color, talla_str, precio, panel_id, genero, estilo, tipo_prenda))
+            
+            codigos_generados.append({"talla": talla_str, "codigo": codigo_final, "cantidad": cantidad})
+            total_ingresado += cantidad
+            
+        if total_ingresado > 0:
+            fecha_a = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, %s, %s, %s, %s, 0, 0, %s, 'INGRESO APP DEVELOPER', 'App Móvil')", (modelo, estampado, color, "MÚLTIPLE", total_ingresado, fecha_a))
+            
+        db.commit()
+        cursor.close(); db.close()
+        return jsonify({'status': 'ok', 'codigos': codigos_generados, 'total': total_ingresado})
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+@app.route('/api/app/actualizar_filtros', methods=['POST'])
+def api_actualizar_filtros():
+    """Ruta para asignar filtros a modelos que ya estaban subidos"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
+    
+    data = request.get_json()
+    modelo = data.get('modelo', '').strip().upper()
+    genero = data.get('genero', '').strip().upper()
+    estilo = data.get('estilo', '').strip().upper()
+    tipo_prenda = data.get('tipo_prenda', '').strip().upper()
+    
+    if not modelo or not genero or not estilo or not tipo_prenda: return jsonify({'error': 'Faltan datos'}), 400
+        
+    try:
+        db = conectar_bd()
+        cursor = db.cursor()
+        cursor.execute("UPDATE panel_stock SET genero=%s, estilo=%s, tipo_prenda=%s WHERE modelo=%s", (genero, estilo, tipo_prenda, modelo))
+        cursor.execute("UPDATE inventario SET genero=%s, estilo=%s, tipo_prenda=%s WHERE modelo=%s", (genero, estilo, tipo_prenda, modelo))
+        db.commit()
+        cursor.close(); db.close()
+        return jsonify({'status': 'ok'})
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
+# 🔥 EL BOTÓN MÁGICO DE MIGRACIÓN 🔥
+@app.route('/api/migrar_bd')
+def api_migrar_bd():
+    """Ejecuta esta ruta una vez en el navegador para actualizar tu BD sin perder ropa"""
+    try:
+        db = conectar_bd()
+        cursor = db.cursor()
+        mensajes = []
+        
+        cursor.execute("SHOW COLUMNS FROM panel_stock LIKE 'genero'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE panel_stock ADD COLUMN genero VARCHAR(50) DEFAULT 'TODO'")
+            cursor.execute("ALTER TABLE panel_stock ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
+            cursor.execute("ALTER TABLE panel_stock ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
+            mensajes.append("✅ Nuevos filtros añadidos a panel_stock con éxito.")
+        else: mensajes.append("✅ panel_stock ya estaba listo.")
+            
+        cursor.execute("SHOW COLUMNS FROM inventario LIKE 'genero'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE inventario ADD COLUMN genero VARCHAR(50) DEFAULT 'TODO'")
+            cursor.execute("ALTER TABLE inventario ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
+            cursor.execute("ALTER TABLE inventario ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
+            mensajes.append("✅ Nuevos filtros añadidos a inventario con éxito.")
+        else: mensajes.append("✅ inventario ya estaba listo.")
+            
+        db.commit()
+        cursor.close(); db.close()
+        return f"<h1>Migración Gacrux Completada</h1><p>{'<br>'.join(mensajes)}</p>"
+    except Exception as e: return f"<h1>Error Crítico</h1><p>{str(e)}</p>"
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
