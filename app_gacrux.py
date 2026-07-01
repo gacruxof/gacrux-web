@@ -710,10 +710,9 @@ def api_app_inventario():
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# RUTAS DE ADMINISTRADOR (NUEVAS)
+# RUTAS DE ADMINISTRADOR (NUEVAS Y AUTOCOMPLETADO)
 # ==============================================================================
 def generar_codigo_13_digitos(cursor, modelo, estampado, color, talla):
-    """Generador Oficial Gacrux de 13 dígitos para la App"""
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
     if res_mod and res_mod['mod_id'] and res_mod['mod_id'].isdigit(): mod_str = res_mod['mod_id']
@@ -741,12 +740,28 @@ def generar_codigo_13_digitos(cursor, modelo, estampado, color, talla):
         max_c = res_max_col['max_col'] if res_max_col and res_max_col['max_col'] else 0
         col_str = f"{max_c + 1:02d}"
 
-    talla_id = {'CH': 1, 'M': 2, 'G': 3}.get(talla.upper(), 4)
+    # Asignamos ID de talla dinámico
+    mapa_tallas = {'CH': 1, 'M': 2, 'G': 3, 'XG': 4, 'T-12': 5, 'T-16': 6, 'EG': 4}
+    talla_id = mapa_tallas.get(talla.upper(), 9)
     return f"{mod_str}{est_str}{col_str}{talla_id:01d}"
+
+@app.route('/api/app/bases', methods=['GET'])
+def api_app_bases():
+    """Descarga los modelos y colores base para el autocompletado en Flutter"""
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM modelos_base")
+        modelos = cursor.fetchall()
+        cursor.execute("SELECT * FROM colores_base")
+        colores = cursor.fetchall()
+        cursor.close(); db.close()
+        return jsonify({'modelos': modelos, 'colores': colores})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/app/subir_lote', methods=['POST'])
 def api_subir_lote():
-    """Ruta para que la App registre modelos nuevos (Modo Desarrollador)"""
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
         
@@ -761,7 +776,7 @@ def api_subir_lote():
     estilo = data.get('estilo', 'NORMAL').strip().upper()
     tipo_prenda = data.get('tipo_prenda', 'SUDADERA').strip().upper()
     
-    if not modelo or not estampado or not color: return jsonify({'error': 'Faltan datos obligatorios'}), 400
+    if not modelo or not estampado or not color: return jsonify({'error': 'Faltan datos'}), 400
         
     try:
         db = conectar_bd()
@@ -770,7 +785,14 @@ def api_subir_lote():
         cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo, estampado, color))
         res = cursor.fetchone()
         
-        ch, m, g, eg = tallas.get('CH', 0), tallas.get('M', 0), tallas.get('G', 0), tallas.get('EG', 0)
+        # Extraemos las tallas dinámicas
+        ch = tallas.get('CH', 0)
+        m = tallas.get('M', 0)
+        g = tallas.get('G', 0)
+        
+        # Talla extra dinámica (T-12, T-16, XG, etc.)
+        talla_extra_nombre = tallas.get('EXTRA_NAME', 'EG').upper()
+        talla_extra_cant = tallas.get('EXTRA_CANT', 0)
         
         if res:
             cursor.execute("""
@@ -778,20 +800,20 @@ def api_subir_lote():
                 SET talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_eg=talla_eg+%s,
                     genero=%s, estilo=%s, tipo_prenda=%s
                 WHERE id=%s
-            """, (ch, m, g, eg, genero, estilo, tipo_prenda, res['id']))
+            """, (ch, m, g, talla_extra_cant, genero, estilo, tipo_prenda, res['id']))
             panel_id = res['id']
         else:
             cursor.execute("""
                 INSERT INTO panel_stock (modelo, estampado, color, talla_ch, talla_m, talla_g, talla_eg, genero, estilo, tipo_prenda) 
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (modelo, estampado, color, ch, m, g, eg, genero, estilo, tipo_prenda))
+            """, (modelo, estampado, color, ch, m, g, talla_extra_cant, genero, estilo, tipo_prenda))
             panel_id = cursor.lastrowid
             
         tallas_ingresadas = []
         if ch > 0: tallas_ingresadas.append(('CH', ch))
         if m > 0: tallas_ingresadas.append(('M', m))
         if g > 0: tallas_ingresadas.append(('G', g))
-        if eg > 0: tallas_ingresadas.append(('EG', eg))
+        if talla_extra_cant > 0: tallas_ingresadas.append((talla_extra_nombre, talla_extra_cant))
         
         codigos_generados = []
         total_ingresado = 0
@@ -823,32 +845,27 @@ def api_subir_lote():
 
 @app.route('/api/app/actualizar_filtros', methods=['POST'])
 def api_actualizar_filtros():
-    """Ruta para asignar filtros a modelos que ya estaban subidos"""
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
-    
     data = request.get_json()
     modelo = data.get('modelo', '').strip().upper()
     genero = data.get('genero', '').strip().upper()
     estilo = data.get('estilo', '').strip().upper()
     tipo_prenda = data.get('tipo_prenda', '').strip().upper()
-    
-    if not modelo or not genero or not estilo or not tipo_prenda: return jsonify({'error': 'Faltan datos'}), 400
-        
     try:
         db = conectar_bd()
         cursor = db.cursor()
         cursor.execute("UPDATE panel_stock SET genero=%s, estilo=%s, tipo_prenda=%s WHERE modelo=%s", (genero, estilo, tipo_prenda, modelo))
         cursor.execute("UPDATE inventario SET genero=%s, estilo=%s, tipo_prenda=%s WHERE modelo=%s", (genero, estilo, tipo_prenda, modelo))
-        db.commit()
-        cursor.close(); db.close()
+        db.commit(); cursor.close(); db.close()
         return jsonify({'status': 'ok'})
     except Exception as e: return jsonify({'error': str(e)}), 500
 
-# 🔥 EL BOTÓN MÁGICO DE MIGRACIÓN 🔥
+# ==============================================================================
+# MIGRACIÓN (Ya incluye las bases)
+# ==============================================================================
 @app.route('/api/migrar_bd')
 def api_migrar_bd():
-    """Ejecuta esta ruta una vez en el navegador para actualizar tu BD sin perder ropa"""
     try:
         db = conectar_bd()
         cursor = db.cursor()
@@ -859,19 +876,25 @@ def api_migrar_bd():
             cursor.execute("ALTER TABLE panel_stock ADD COLUMN genero VARCHAR(50) DEFAULT 'TODO'")
             cursor.execute("ALTER TABLE panel_stock ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
             cursor.execute("ALTER TABLE panel_stock ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
-            mensajes.append("✅ Nuevos filtros añadidos a panel_stock con éxito.")
-        else: mensajes.append("✅ panel_stock ya estaba listo.")
+            mensajes.append("✅ Filtros añadidos a panel_stock.")
             
         cursor.execute("SHOW COLUMNS FROM inventario LIKE 'genero'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE inventario ADD COLUMN genero VARCHAR(50) DEFAULT 'TODO'")
             cursor.execute("ALTER TABLE inventario ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
             cursor.execute("ALTER TABLE inventario ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
-            mensajes.append("✅ Nuevos filtros añadidos a inventario con éxito.")
-        else: mensajes.append("✅ inventario ya estaba listo.")
+            mensajes.append("✅ Filtros añadidos a inventario.")
             
-        db.commit()
-        cursor.close(); db.close()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS modelos_base (
+                id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE,
+                genero VARCHAR(50), estilo VARCHAR(50), tipo_prenda VARCHAR(50)
+            )
+        """)
+        cursor.execute("CREATE TABLE IF NOT EXISTS colores_base (id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE)")
+        mensajes.append("✅ Tablas de Autocompletado Creadas.")
+
+        db.commit(); cursor.close(); db.close()
         return f"<h1>Migración Gacrux Completada</h1><p>{'<br>'.join(mensajes)}</p>"
     except Exception as e: return f"<h1>Error Crítico</h1><p>{str(e)}</p>"
 
