@@ -667,8 +667,10 @@ def api_login():
 def api_descontar():
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'Acceso no autorizado a la API'}), 401
+
     data = request.get_json()
     codigo = data.get('codigo_barras', '').strip()
+    realizado_por = data.get('realizado_por', 'App Nativa Flutter').strip() # <- AQUÍ ATRAPAMOS EL NOMBRE
     
     try:
         db = conectar_bd()
@@ -679,21 +681,29 @@ def api_descontar():
         if prenda:
             talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg'}
             col = talla_map.get(prenda['talla'].upper().strip())
+            
             if col and prenda['panel_stock_id']:
                 cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (prenda['panel_stock_id'],))
                 res_stock = cursor.fetchone()
+                
                 if res_stock and res_stock[col] > 0:
                     cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
                     fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     precio_p = float(prenda['precio'])
-                    cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'APP MOVIL DIRECTO', 'App Nativa Flutter')", 
-                                   (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual))
+                    
+                    sql_h = """
+                        INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                        VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'BAJA APP MOVIL', %s)
+                    """
+                    cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, realizado_por))
                     db.commit()
                     cursor.close(); db.close()
-                    return jsonify({'status': 'ok', 'msg': 'Descontado de nube exitosamente'})
+                    return jsonify({'status': 'ok', 'msg': 'Descontado exitosamente'})
+        
         cursor.close(); db.close()
-        return jsonify({'error': 'Código inválido o ya no hay stock disponible'}), 400
-    except Exception as e: return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Código inválido o sin stock'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/app/inventario', methods=['GET'])
 def api_app_inventario():
@@ -771,6 +781,7 @@ def api_subir_lote():
     color = data.get('color', '').strip().upper()
     precio = float(data.get('precio', 250.0))
     tallas = data.get('tallas', {})
+    realizado_por = data.get('realizado_por', 'App Móvil').strip() # <- AQUÍ ATRAPAMOS EL NOMBRE
     
     genero = data.get('genero', 'TODO').strip().upper()
     estilo = data.get('estilo', 'NORMAL').strip().upper()
@@ -785,12 +796,9 @@ def api_subir_lote():
         cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo, estampado, color))
         res = cursor.fetchone()
         
-        # Extraemos las tallas dinámicas
         ch = tallas.get('CH', 0)
         m = tallas.get('M', 0)
         g = tallas.get('G', 0)
-        
-        # Talla extra dinámica (T-12, T-16, XG, etc.)
         talla_extra_nombre = tallas.get('EXTRA_NAME', 'EG').upper()
         talla_extra_cant = tallas.get('EXTRA_CANT', 0)
         
@@ -836,7 +844,8 @@ def api_subir_lote():
             
         if total_ingresado > 0:
             fecha_a = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, %s, %s, %s, %s, 0, 0, %s, 'INGRESO APP DEVELOPER', 'App Móvil')", (modelo, estampado, color, "MÚLTIPLE", total_ingresado, fecha_a))
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, %s, %s, %s, %s, 0, 0, %s, 'INGRESO APP LOTE', %s)", 
+                           (modelo, estampado, color, "MÚLTIPLE", total_ingresado, fecha_a, realizado_por))
             
         db.commit()
         cursor.close(); db.close()
