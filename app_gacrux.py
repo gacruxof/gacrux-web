@@ -49,7 +49,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# HTML WEB
+# HTML WEB (INTACTO)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -523,7 +523,7 @@ HTML_BASE = """
 """
 
 # ==============================================================================
-# RUTAS WEB PRINCIPALES
+# RUTAS WEB PRINCIPALES (INTACTAS)
 # ==============================================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -597,36 +597,44 @@ def api_baja():
     prenda = cursor.fetchone()
     
     if prenda:
-        # 🔥 FIX APLICADO: Tallas extra enlazadas a talla_eg
+        # 🔥 FIX APLICADO: Tallas extra y fallback inteligente
         talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg', 'XG':'talla_eg', 'T-12':'talla_eg', 'T-16':'talla_eg'}
         col = talla_map.get(prenda['talla'].upper().strip())
         
-        if col and prenda['panel_stock_id']:
-            cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (prenda['panel_stock_id'],))
-            res_stock = cursor.fetchone()
+        if col:
+            p_id = prenda['panel_stock_id']
+            # Si es un código antiguo (NULL), lo buscamos a mano
+            if not p_id:
+                cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
+                res_p = cursor.fetchone()
+                if res_p: p_id = res_p['id']
             
-            if res_stock:
-                if res_stock[col] <= 0:
-                    cursor.close(); db.close()
-                    return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
+            if p_id:
+                cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
+                res_stock = cursor.fetchone()
+                
+                if res_stock:
+                    if res_stock[col] <= 0:
+                        cursor.close(); db.close()
+                        return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
+                        
+                    cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (p_id,))
+                    fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    precio_p = float(prenda['precio'])
                     
-                cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
-                fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                precio_p = float(prenda['precio'])
-                
-                sql_h = """
-                    INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
-                    VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
-                """
-                cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, current_user.nombre_real))
-                db.commit()
-                
-                msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
-                cursor.close(); db.close()
-                return jsonify({'status': 'ok', 'msg': msg})
-            else:
-                cursor.close(); db.close()
-                return jsonify({'status': 'error', 'msg': 'Borrada del Catálogo Maestro.'})
+                    sql_h = """
+                        INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                        VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
+                    """
+                    cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, current_user.nombre_real))
+                    db.commit()
+                    
+                    msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
+                    cursor.close(); db.close()
+                    return jsonify({'status': 'ok', 'msg': msg})
+                else:
+                    cursor.close(); db.close()
+                    return jsonify({'status': 'error', 'msg': 'Borrada del Catálogo Maestro.'})
                 
     cursor.close(); db.close()
     return jsonify({'status': 'error', 'msg': 'Código de barras no válido o desconectado.'})
@@ -637,31 +645,9 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-
 # ==============================================================================
 # RUTAS DE LA APP MÓVIL Y NUEVO MODO DESARROLLADOR
 # ==============================================================================
-
-# 🔥 NUEVA RUTA: BUZÓN DE LA NUBE PARA EL POS 🔥
-@app.route('/api/pos/enviar', methods=['POST'])
-def api_pos_enviar():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header: return jsonify({'error': 'No autorizado'}), 401
-    
-    codigo = request.get_json().get('codigo', '').strip()
-    if not codigo: return jsonify({'error': 'Sin código'}), 400
-    
-    try:
-        db = conectar_bd()
-        cursor = db.cursor()
-        # Inyecta el código en la cola_escaneos de la nube
-        cursor.execute("INSERT INTO cola_escaneos (codigo_barras, procesado) VALUES (%s, 0)", (codigo,))
-        db.commit()
-        cursor.close()
-        db.close()
-        return jsonify({'status': 'ok'})
-    except Exception as e: 
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -702,27 +688,35 @@ def api_descontar():
         prenda = cursor.fetchone()
         
         if prenda:
-            # 🔥 FIX APLICADO: Tallas extra enlazadas a talla_eg
+            # 🔥 FIX APLICADO: Tallas extra y fallback inteligente
             talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg', 'XG':'talla_eg', 'T-12':'talla_eg', 'T-16':'talla_eg'}
             col = talla_map.get(prenda['talla'].upper().strip())
             
-            if col and prenda['panel_stock_id']:
-                cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (prenda['panel_stock_id'],))
-                res_stock = cursor.fetchone()
+            if col:
+                p_id = prenda['panel_stock_id']
+                # Si es un código antiguo (NULL), lo buscamos a mano
+                if not p_id:
+                    cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
+                    res_p = cursor.fetchone()
+                    if res_p: p_id = res_p['id']
                 
-                if res_stock and res_stock[col] > 0:
-                    cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (prenda['panel_stock_id'],))
-                    fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    precio_p = float(prenda['precio'])
+                if p_id:
+                    cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
+                    res_stock = cursor.fetchone()
                     
-                    sql_h = """
-                        INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
-                        VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'BAJA APP MOVIL', %s)
-                    """
-                    cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, realizado_por))
-                    db.commit()
-                    cursor.close(); db.close()
-                    return jsonify({'status': 'ok', 'msg': 'Descontado exitosamente'})
+                    if res_stock and res_stock[col] > 0:
+                        cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (p_id,))
+                        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        precio_p = float(prenda['precio'])
+                        
+                        sql_h = """
+                            INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                            VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'BAJA APP MOVIL', %s)
+                        """
+                        cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, realizado_por))
+                        db.commit()
+                        cursor.close(); db.close()
+                        return jsonify({'status': 'ok', 'msg': 'Descontado exitosamente'})
         
         cursor.close(); db.close()
         return jsonify({'error': 'Código inválido o sin stock'}), 400
@@ -742,8 +736,25 @@ def api_app_inventario():
         return jsonify(resultados)
     except Exception as e: return jsonify({'error': str(e)}), 500
 
+@app.route('/api/pos/enviar', methods=['POST'])
+def api_pos_enviar():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header: return jsonify({'error': 'No autorizado'}), 401
+    codigo = request.get_json().get('codigo', '').strip()
+    if not codigo: return jsonify({'error': 'Sin código'}), 400
+    try:
+        db = conectar_bd()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO cola_escaneos (codigo_barras, procesado) VALUES (%s, 0)", (codigo,))
+        db.commit()
+        cursor.close()
+        db.close()
+        return jsonify({'status': 'ok'})
+    except Exception as e: 
+        return jsonify({'error': str(e)}), 500
+
 # ==============================================================================
-# RUTAS DE ADMINISTRADOR
+# RUTAS DE ADMINISTRADOR (NUEVAS Y AUTOCOMPLETADO)
 # ==============================================================================
 def generar_codigo_13_digitos(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
