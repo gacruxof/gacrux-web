@@ -900,7 +900,38 @@ def api_actualizar_filtros():
         db.commit(); cursor.close(); db.close()
         return jsonify({'status': 'ok'})
     except Exception as e: return jsonify({'error': str(e)}), 500
-
+# 🔥 NUEVA RUTA PARA LOS LÍMITES OFFLINE 🔥
+@app.route('/api/app/mapa_codigos', methods=['GET'])
+def api_mapa_codigos():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        # Trae todos los códigos y los enlaza con su stock real
+        cursor.execute("""
+            SELECT i.codigo_barras, i.talla, 
+                   COALESCE(p.talla_ch, 0) as talla_ch, 
+                   COALESCE(p.talla_m, 0) as talla_m, 
+                   COALESCE(p.talla_g, 0) as talla_g, 
+                   COALESCE(p.talla_eg, 0) as talla_eg
+            FROM inventario i
+            LEFT JOIN panel_stock p ON 
+                (i.panel_stock_id = p.id) OR 
+                (i.panel_stock_id IS NULL AND i.modelo = p.modelo AND i.estampado = p.estampado AND i.color = p.color)
+        """)
+        res = cursor.fetchall()
+        cursor.close(); db.close()
+        
+        mapa = {}
+        t_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg', 'XG':'talla_eg', 'T-12':'talla_eg', 'T-16':'talla_eg'}
+        for r in res:
+            columna = t_map.get(str(r['talla']).upper(), 'talla_eg')
+            mapa[r['codigo_barras']] = r[columna]
+            
+        return jsonify(mapa)
+    except Exception as e: 
+        return jsonify({'error': str(e)}), 500
 # ==============================================================================
 # MIGRACIÓN
 # ==============================================================================
