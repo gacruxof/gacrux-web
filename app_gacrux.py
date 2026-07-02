@@ -597,13 +597,11 @@ def api_baja():
     prenda = cursor.fetchone()
     
     if prenda:
-        # 🔥 FIX APLICADO: Tallas extra y fallback inteligente
         talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg', 'XG':'talla_eg', 'T-12':'talla_eg', 'T-16':'talla_eg'}
         col = talla_map.get(prenda['talla'].upper().strip())
         
         if col:
             p_id = prenda['panel_stock_id']
-            # Si es un código antiguo (NULL), lo buscamos a mano
             if not p_id:
                 cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
                 res_p = cursor.fetchone()
@@ -688,13 +686,11 @@ def api_descontar():
         prenda = cursor.fetchone()
         
         if prenda:
-            # 🔥 FIX APLICADO: Tallas extra y fallback inteligente
             talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg', 'XG':'talla_eg', 'T-12':'talla_eg', 'T-16':'talla_eg'}
             col = talla_map.get(prenda['talla'].upper().strip())
             
             if col:
                 p_id = prenda['panel_stock_id']
-                # Si es un código antiguo (NULL), lo buscamos a mano
                 if not p_id:
                     cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
                     res_p = cursor.fetchone()
@@ -716,10 +712,13 @@ def api_descontar():
                         cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, realizado_por))
                         db.commit()
                         cursor.close(); db.close()
-                        return jsonify({'status': 'ok', 'msg': 'Descontado exitosamente'})
+                        
+                        # 🔥 MAGIA AQUÍ: Devolvemos el nombre exacto de la prenda en vez del mensaje genérico
+                        nombre_prenda = f"{prenda['modelo']} {prenda['estampado']} {prenda['color']} {prenda['talla']}"
+                        return jsonify({'status': 'ok', 'msg': nombre_prenda})
         
         cursor.close(); db.close()
-        return jsonify({'error': 'Código inválido o sin stock'}), 400
+        return jsonify({'error': 'CÓDIGO INVÁLIDO O SIN STOCK'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
