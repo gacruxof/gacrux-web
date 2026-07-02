@@ -49,7 +49,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# HTML WEB (INTACTO)
+# HTML WEB
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -523,7 +523,7 @@ HTML_BASE = """
 """
 
 # ==============================================================================
-# RUTAS WEB PRINCIPALES (INTACTAS)
+# RUTAS WEB PRINCIPALES
 # ==============================================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -597,7 +597,8 @@ def api_baja():
     prenda = cursor.fetchone()
     
     if prenda:
-        talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg'}
+        # 🔥 FIX APLICADO: Tallas extra enlazadas a talla_eg
+        talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg', 'XG':'talla_eg', 'T-12':'talla_eg', 'T-16':'talla_eg'}
         col = talla_map.get(prenda['talla'].upper().strip())
         
         if col and prenda['panel_stock_id']:
@@ -636,9 +637,31 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
+
 # ==============================================================================
 # RUTAS DE LA APP MÓVIL Y NUEVO MODO DESARROLLADOR
 # ==============================================================================
+
+# 🔥 NUEVA RUTA: BUZÓN DE LA NUBE PARA EL POS 🔥
+@app.route('/api/pos/enviar', methods=['POST'])
+def api_pos_enviar():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header: return jsonify({'error': 'No autorizado'}), 401
+    
+    codigo = request.get_json().get('codigo', '').strip()
+    if not codigo: return jsonify({'error': 'Sin código'}), 400
+    
+    try:
+        db = conectar_bd()
+        cursor = db.cursor()
+        # Inyecta el código en la cola_escaneos de la nube
+        cursor.execute("INSERT INTO cola_escaneos (codigo_barras, procesado) VALUES (%s, 0)", (codigo,))
+        db.commit()
+        cursor.close()
+        db.close()
+        return jsonify({'status': 'ok'})
+    except Exception as e: 
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -670,7 +693,7 @@ def api_descontar():
 
     data = request.get_json()
     codigo = data.get('codigo_barras', '').strip()
-    realizado_por = data.get('realizado_por', 'App Nativa Flutter').strip() # <- AQUÍ ATRAPAMOS EL NOMBRE
+    realizado_por = data.get('realizado_por', 'App Nativa Flutter').strip()
     
     try:
         db = conectar_bd()
@@ -679,7 +702,8 @@ def api_descontar():
         prenda = cursor.fetchone()
         
         if prenda:
-            talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg'}
+            # 🔥 FIX APLICADO: Tallas extra enlazadas a talla_eg
+            talla_map = {'CH':'talla_ch', 'M':'talla_m', 'G':'talla_g', 'EG':'talla_eg', 'XG':'talla_eg', 'T-12':'talla_eg', 'T-16':'talla_eg'}
             col = talla_map.get(prenda['talla'].upper().strip())
             
             if col and prenda['panel_stock_id']:
@@ -712,7 +736,6 @@ def api_app_inventario():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        # Traerá también las nuevas columnas automáticamente
         cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
         resultados = cursor.fetchall()
         cursor.close(); db.close()
@@ -720,7 +743,7 @@ def api_app_inventario():
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# RUTAS DE ADMINISTRADOR (NUEVAS Y AUTOCOMPLETADO)
+# RUTAS DE ADMINISTRADOR
 # ==============================================================================
 def generar_codigo_13_digitos(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
@@ -750,14 +773,12 @@ def generar_codigo_13_digitos(cursor, modelo, estampado, color, talla):
         max_c = res_max_col['max_col'] if res_max_col and res_max_col['max_col'] else 0
         col_str = f"{max_c + 1:02d}"
 
-    # Asignamos ID de talla dinámico
     mapa_tallas = {'CH': 1, 'M': 2, 'G': 3, 'XG': 4, 'T-12': 5, 'T-16': 6, 'EG': 4}
     talla_id = mapa_tallas.get(talla.upper(), 9)
     return f"{mod_str}{est_str}{col_str}{talla_id:01d}"
 
 @app.route('/api/app/bases', methods=['GET'])
 def api_app_bases():
-    """Descarga los modelos y colores base para el autocompletado en Flutter"""
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
@@ -781,7 +802,7 @@ def api_subir_lote():
     color = data.get('color', '').strip().upper()
     precio = float(data.get('precio', 250.0))
     tallas = data.get('tallas', {})
-    realizado_por = data.get('realizado_por', 'App Móvil').strip() # <- AQUÍ ATRAPAMOS EL NOMBRE
+    realizado_por = data.get('realizado_por', 'App Móvil').strip()
     
     genero = data.get('genero', 'TODO').strip().upper()
     estilo = data.get('estilo', 'NORMAL').strip().upper()
@@ -871,7 +892,7 @@ def api_actualizar_filtros():
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# MIGRACIÓN (Ya incluye las bases)
+# MIGRACIÓN
 # ==============================================================================
 @app.route('/api/migrar_bd')
 def api_migrar_bd():
