@@ -969,15 +969,39 @@ def api_migrar_bd():
         return f"<h1>Migración Gacrux Completada</h1><p>{'<br>'.join(mensajes)}</p>"
     except Exception as e: return f"<h1>Error Crítico</h1><p>{str(e)}</p>"
 # ==============================================================================
-# 🔥 MOTOR DE HOJA MADRE MÓVIL (NUBE -> PDF -> CELULAR) 🔥
+# 🔥 MOTOR DE HOJA MADRE MÓVIL Y GESTOR DE RECETAS EN NUBE 🔥
 # ==============================================================================
 import io
 import base64
+import json
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+
+@app.route('/api/app/receta/<modelo>', methods=['GET'])
+def api_get_receta(modelo):
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        # Aseguramos que la tabla exista
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recetas_madre (
+                modelo VARCHAR(100) PRIMARY KEY,
+                folio INT DEFAULT 1,
+                colores TEXT,
+                cuerpos TEXT
+            )
+        """)
+        cursor.execute("SELECT * FROM recetas_madre WHERE modelo = %s", (modelo,))
+        res = cursor.fetchone()
+        cursor.close()
+        db.close()
+        if res: return jsonify(res)
+        return jsonify({})
+    except Exception as e:
+        return jsonify({})
 
 @app.route('/api/app/magia_madre', methods=['POST'])
 def api_magia_madre():
@@ -1001,7 +1025,6 @@ def api_magia_madre():
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
         
-        # 1. MATEMÁTICAS DE CORTE
         datos_corte = []
         for c in colores:
             lienzos = int(datos_lienzo_color.get(c, 0))
@@ -1014,10 +1037,12 @@ def api_magia_madre():
 
         datos_corte.sort(key=lambda x: x["gran_total"], reverse=True)
 
-        # 2. MATEMÁTICAS DE INVENTARIO Y AUTO-SUBIDA
         num_folios = len(folios_a_usar)
         est_por_folio = [estampados[i:i + 4] for i in range(0, len(estampados), 4)]
         datos_inventario_global = []
+
+        total_ingresado = 0
+        mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ch", "XG": "talla_eg", "EX G": "talla_eg", "T-12": "talla_eg", "T-16": "talla_eg"}
 
         for i_f, folio_actual in enumerate(folios_a_usar):
             estampados_del_folio = est_por_folio[i_f] if i_f < len(est_por_folio) else []
@@ -1043,10 +1068,6 @@ def api_magia_madre():
                     est_dict["filas"].append(fila_inv)
 
             datos_inventario_global.append({"folio": str(folio_actual).zfill(2), "estampados": estampados_data})
-            
-            # 🔥 INYECCIÓN A LA NUBE 🔥
-            total_ingresado = 0
-            mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ch", "XG": "talla_eg", "EX G": "talla_eg", "T-12": "talla_eg", "T-16": "talla_eg"}
             
             for est_item in estampados_data:
                 est_nombre = est_item["nombre"]
@@ -1075,27 +1096,38 @@ def api_magia_madre():
                         if fila["tallas"][t] > 0:
                             cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, est_nombre, c, t))
                             if not cursor.fetchone():
-                                # Generar Código (Lógica interna string 13 dig)
                                 mod_str = f"{panel_id:05d}"; est_str = "00001"; col_str = "01"; t_id = 9
                                 cod = f"{mod_str}{est_str}{col_str}{t_id}"
                                 cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
                                                (cod, modelo_folio_nube, est_nombre, c, t, panel_id))
-            if total_ingresado > 0:
-                cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'HOJA MADRE APP', 'SISTEMA')", 
-                               (modelo_folio_nube, total_ingresado, fecha_txt))
+                                               
+        if total_ingresado > 0:
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'HOJA MADRE APP', 'SISTEMA')", 
+                           (modelo_folio_nube, total_ingresado, fecha_txt))
 
+        # 🔥 AUTO-INCREMENTO DEL FOLIO EN LA NUBE 🔥
+        siguiente_folio = folios_a_usar[-1] + 1
+        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (siguiente_folio, modelo))
         db.commit()
         cursor.close(); db.close()
 
-        # 3. GENERAR EL PDF ÚNICO EN MEMORIA
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=20)
         elementos = []
         estilos = getSampleStyleSheet()
 
-        # --- DIBUJAR PÁGINA 1: CORTE ---
-        elementos.append(Paragraph(f"<b>MODELO:</b> {modelo} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>FOLIO:</b> {str_folios} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>FECHA:</b> {fecha_txt}", estilos['Heading2']))
+        # 🔥 ENCABEZADO DE CORTE CORREGIDO 🔥
+        t_header_corte = Table([
+            [Paragraph(f"<b>MODELO:</b> {modelo}", estilos['Normal']), 
+             Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
+             Paragraph(f"<b>FOLIO:</b> {str_folios}", ParagraphStyle(name='r', alignment=TA_RIGHT))],
+            [Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b> {fecha_txt}", estilos['Normal']), 
+             "", 
+             Paragraph("<b>FECHA DE ENTREGA:</b> _____________", ParagraphStyle(name='r', alignment=TA_RIGHT))]
+        ], colWidths=[185, 185, 185])
+        elementos.append(t_header_corte)
         elementos.append(Spacer(1, 40)) 
+        
         tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
         data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
         piezas_fijas = [("TRASERO", 1), ("DELANTERO", 1), ("MANGAS", "1A 1B"), ("GORROS", "1A 1B"), ("BOLSAS", 1), ("PRETINA", 1), ("PUÑOS", 2)]
@@ -1237,10 +1269,7 @@ def api_magia_madre():
             if i_f < len(datos_inventario_global) - 1:
                 elementos.append(PageBreak())
 
-        # Renderizar todo en el Buffer
         doc.build(elementos)
-        
-        # Convertir a Base64 para enviar a Flutter
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
