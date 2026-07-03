@@ -9,7 +9,7 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 import mysql.connector
 
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Flowable
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
@@ -600,9 +600,8 @@ def api_baja():
                 if res_p: p_id = res_p['id']
             
             if p_id:
-                # Comprobación de existencia de columna por seguridad
                 cursor.execute("SHOW COLUMNS FROM panel_stock LIKE %s", (col,))
-                if not cursor.fetchone() and col == 'talla_ex_g': col = 'talla_eg' # Respaldo antiguo
+                if not cursor.fetchone() and col == 'talla_ex_g': col = 'talla_eg'
                 
                 cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
                 res_stock = cursor.fetchone()
@@ -643,21 +642,19 @@ def logout():
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
 
-class FirmasAbsolutas(Flowable):
-    def wrap(self, availWidth, availHeight): 
-        return 0, 0
-    def draw(self):
-        self.canv.saveState()
-        self.canv.translate(0, -self.canv._currentMatrix[5]) 
-        self.canv.setFont("Helvetica-Bold", 9)
-        self.canv.setFillColor(colors.black)
-        self.canv.drawCentredString(180, 50, "___________________________________")
-        self.canv.drawCentredString(180, 35, "DOBLADO")
-        self.canv.drawCentredString(180, 20, "JACQUELINE TLATELPA XOLALTENCO")
-        self.canv.drawCentredString(430, 50, "___________________________________")
-        self.canv.drawCentredString(430, 35, "ALMACÉN")
-        self.canv.drawCentredString(430, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
-        self.canv.restoreState()
+# 🔥 FUNCIÓN MAESTRA DEL PIE DE PÁGINA 🔥
+def dibujar_footer_firmas(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica-Bold", 9)
+    canvas.setFillColor(colors.black)
+    canvas.drawCentredString(180, 50, "___________________________________")
+    canvas.drawCentredString(180, 35, "DOBLADO")
+    canvas.drawCentredString(180, 20, "JACQUELINE TLATELPA XOLALTENCO")
+    canvas.drawCentredString(430, 50, "___________________________________")
+    canvas.drawCentredString(430, 35, "ALMACÉN")
+    canvas.drawCentredString(430, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
+    canvas.restoreState()
+
 
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
@@ -935,7 +932,6 @@ def api_mapa_codigos():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        # Trae todos los códigos previniendo errores si las columnas viejas no existen
         cursor.execute("""
             SELECT i.codigo_barras, i.talla, 
                    COALESCE(p.talla_t12, 0) as talla_t12, 
@@ -1293,12 +1289,12 @@ def api_magia_madre():
             t_grid = Table(grid_data, colWidths=[291, 291])
             t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
             elementos.append(t_grid)
-            elementos.append(FirmasAbsolutas())
             
             if i_f < len(datos_inventario_global) - 1:
                 elementos.append(PageBreak())
 
-        doc.build(elementos, onFirstPage=FirmasAbsolutas().draw, onLaterPages=FirmasAbsolutas().draw)
+        # 🔥 LA SOLUCIÓN DEL ERROR CRÍTICO ESTÁ AQUÍ 🔥
+        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
@@ -1577,7 +1573,6 @@ def api_magia_pedido():
             t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
             
             elementos.append(t_grid)
-            elementos.append(FirmasAbsolutas())
             
             if i_e < len(estampados) - 1: elementos.append(PageBreak())
 
@@ -1590,7 +1585,8 @@ def api_magia_pedido():
         cursor.close()
         db.close()
 
-        doc.build(elementos, onFirstPage=FirmasAbsolutas().draw, onLaterPages=FirmasAbsolutas().draw)
+        # 🔥 LA SOLUCIÓN DEL ERROR CRÍTICO ESTÁ AQUÍ 🔥
+        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
