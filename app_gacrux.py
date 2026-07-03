@@ -1003,6 +1003,39 @@ def api_get_receta(modelo):
     except Exception as e:
         return jsonify({})
 
+# 🔥 ALGORITMO DE CÓDIGO DE BARRAS DE 13 DÍGITOS 🔥
+def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
+    res_mod = cursor.fetchone()
+    if res_mod and res_mod['mod_id'] and res_mod['mod_id'].isdigit(): mod_str = res_mod['mod_id']
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 1, 5) AS UNSIGNED)) AS max_mod FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'")
+        res_max_mod = cursor.fetchone()
+        max_m = res_max_mod['max_mod'] if res_max_mod and res_max_mod['max_mod'] else 0
+        mod_str = f"{max_m + 1:05d}"
+
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 6, 5) AS est_id FROM inventario WHERE modelo = %s AND estampado = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo, estampado))
+    res_est = cursor.fetchone()
+    if res_est and res_est['est_id'] and res_est['est_id'].isdigit(): est_str = res_est['est_id']
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 6, 5) AS UNSIGNED)) AS max_est FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'", (modelo,))
+        res_max_est = cursor.fetchone()
+        max_e = res_max_est['max_est'] if res_max_est and res_max_est['max_est'] else 0
+        est_str = f"{max_e + 1:05d}"
+
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 11, 2) AS col_id FROM inventario WHERE modelo = %s AND estampado = %s AND color = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo, estampado, color))
+    res_col = cursor.fetchone()
+    if res_col and res_col['col_id'] and res_col['col_id'].isdigit(): col_str = res_col['col_id']
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 11, 2) AS UNSIGNED)) AS max_col FROM inventario WHERE modelo = %s AND estampado = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'", (modelo, estampado))
+        res_max_col = cursor.fetchone()
+        max_c = res_max_col['max_col'] if res_max_col and res_max_col['max_col'] else 0
+        col_str = f"{max_c + 1:02d}"
+
+    mapa_tallas = {'CH': 1, 'M': 2, 'G': 3, 'XG': 4, 'EX G': 4, 'T-12': 5, 'T-16': 6, 'EG': 4}
+    talla_id = mapa_tallas.get(talla.upper(), 9)
+    return f"{mod_str}{est_str}{col_str}{talla_id:01d}"
+    
 @app.route('/api/app/magia_madre', methods=['POST'])
 def api_magia_madre():
     auth_header = request.headers.get('Authorization')
