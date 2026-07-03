@@ -1512,7 +1512,8 @@ def api_magia_pedido():
         total_ingresado_nube = 0
         mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ch", "XG": "talla_eg", "EX G": "talla_eg", "T-12": "talla_eg", "T-16": "talla_eg"}
 
-        for f_data in datos_inventario_global:
+        # 🔥 AQUI ESTABA EL ERROR DEL i_f 🔥
+        for i_f, f_data in enumerate(datos_inventario_global):
             f_num = str(f_data["folio"]).zfill(2)
             grupo_tallas = f_data["grupo_tallas"]
             cuerpos = f_data["cuerpos"]
@@ -1636,7 +1637,9 @@ def api_magia_pedido():
             t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,1), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
             elementos.append(Spacer(1, 10)); elementos.append(t_firmas)
             
-            if i_f < len(datos_inventario_global) - 1: elementos.append(PageBreak())
+            # 🔥 CORRECCIÓN DEL SALTO DE PÁGINA 🔥
+            if i_f < len(datos_inventario_global) - 1:
+                elementos.append(PageBreak())
 
         if total_ingresado_nube > 0:
             cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
