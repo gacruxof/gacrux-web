@@ -1303,6 +1303,325 @@ def api_magia_madre():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+import math
+import copy
+
+@app.route('/api/app/magia_pedido', methods=['POST'])
+def api_magia_pedido():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): 
+        return jsonify({'error': 'No autorizado'}), 401
+    
+    req = request.get_json()
+    modelo = req.get('modelo', '').strip().upper()
+    estampados = req.get('estampados', [])
+    if not estampados: estampados = ["SIN ESTAMPADO"]
+    pedidos_app = req.get('pedidos', {}) # formato: { color: { talla: cantidad_total } }
+    folio_arranque = int(req.get('folio_arranque', 1))
+    
+    fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
+
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+
+        # 1. Identificar tallas activas
+        tallas_activas = set()
+        for c, t_data in pedidos_app.items():
+            for t, cant in t_data.items():
+                if cant > 0: tallas_activas.add(t)
+        tallas_activas = list(tallas_activas)
+        # Orden lógico
+        orden_tallas = {"T-12":1, "T-16":2, "EX CH":3, "CH":4, "M":5, "G":6, "EX G":7}
+        tallas_activas.sort(key=lambda x: orden_tallas.get(x, 99))
+
+        # 2. MOTOR DE IA: Optimización de Combinaciones y Separación de Hojas
+        def calcular_desperdicio(grupo_tallas):
+            best_waste = float('inf'); best_cuerpos = {}; best_lienzos = {}
+            def get_combos(n, current_sum=0):
+                if n == 1: return [[i] for i in range(1, 7 - current_sum)]
+                combos = []
+                for i in range(1, 7 - current_sum - (n-1) + 1):
+                    for rest in get_combos(n-1, current_sum + i):
+                        combos.append([i] + rest)
+                return combos
+                
+            combos = get_combos(len(grupo_tallas))
+            for combo in combos:
+                cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
+                lienzos_color = {}; waste = 0
+                for c, peds in pedidos_app.items():
+                    req_lienzos = 0
+                    for t in grupo_tallas:
+                        cant = peds.get(t, 0)
+                        if cant > 0: req_lienzos = max(req_lienzos, math.ceil(cant / cuerpos[t]))
+                    lienzos_color[c] = req_lienzos
+                    for t in grupo_tallas:
+                        waste += (req_lienzos * cuerpos[t]) - peds.get(t, 0)
+                if waste < best_waste:
+                    best_waste = waste; best_cuerpos = cuerpos; best_lienzos = lienzos_color
+            return best_waste, best_cuerpos, best_lienzos
+
+        particiones = []
+        if len(tallas_activas) <= 3:
+            w_all, c_all, l_all = calcular_desperdicio(tallas_activas)
+            best_split_waste = float('inf'); best_split = None
+            if len(tallas_activas) == 2:
+                w1, c1, l1 = calcular_desperdicio([tallas_activas[0]])
+                w2, c2, l2 = calcular_desperdicio([tallas_activas[1]])
+                if (w1+w2) < w_all: particiones = [ ([tallas_activas[0]], c1, l1), ([tallas_activas[1]], c2, l2) ]
+                else: particiones = [ (tallas_activas, c_all, l_all) ]
+            elif len(tallas_activas) == 3:
+                for i in range(3):
+                    single = [tallas_activas[i]]
+                    pair = [tallas_activas[j] for j in range(3) if j != i]
+                    ws, cs, ls = calcular_desperdicio(single)
+                    wp, cp, lp = calcular_desperdicio(pair)
+                    if ws+wp < best_split_waste:
+                        best_split_waste = ws+wp
+                        best_split = [ (single, cs, ls), (pair, cp, lp) ]
+                if best_split_waste < w_all: particiones = best_split
+                else: particiones = [ (tallas_activas, c_all, l_all) ]
+            else: particiones = [ (tallas_activas, c_all, l_all) ]
+        else:
+            for i in range(0, len(tallas_activas), 2):
+                grupo = tallas_activas[i:i+2]
+                w, c, l = calcular_desperdicio(grupo)
+                particiones.append((grupo, c, l))
+
+        # 3. GENERAR PDFs
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=20)
+        elementos = []
+        estilos = getSampleStyleSheet()
+        style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
+
+        folio_actual = folio_arranque
+        datos_inventario_global = []
+
+        for particion in particiones:
+            grupo_tallas, cuerpos, lienzos = particion
+            
+            # --- DIBUJAR HOJA DE CORTE ---
+            t_header_corte = Table([
+                [Paragraph(f"<b>MODELO:</b> {modelo}", style_header_corte), 
+                 Paragraph("<b>HOJA DE CORTE (PEDIDO)</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
+                 Paragraph(f"<b>FOLIO:</b> {str(folio_actual).zfill(2)}", style_header_corte)],
+                [Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b> {fecha_txt}", estilos['Normal']), "", Paragraph("<b>FECHA DE ENTREGA:</b> _____________", ParagraphStyle(name='r', alignment=TA_RIGHT))]
+            ], colWidths=[185, 185, 185])
+            elementos.append(t_header_corte); elementos.append(Spacer(1, 30))
+            
+            tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
+            data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
+            piezas_fijas = [("TRASERO", 1), ("DELANTERO", 1), ("MANGAS", "1A 1B"), ("GORROS", "1A 1B"), ("BOLSAS", 1), ("PRETINA", 1), ("PUÑOS", 2)]
+            for nombre_p, mult in piezas_fijas:
+                fila = [nombre_p, str(mult)]
+                for t in tallas_todas:
+                    c = cuerpos.get(t, 0)
+                    if isinstance(mult, int): fila.append(str(c * mult) if c > 0 else "")
+                    else: fila.append(f"{c}A {c}B" if c > 0 else "")
+                data_t1.append(fila)
+
+            t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60])
+            t1.setStyle(TableStyle([
+                ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
+                ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#fef3c7")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,1), 'Helvetica-Bold'),
+                ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+            ]))
+            elementos.append(t1); elementos.append(Spacer(1, 20)); elementos.append(Paragraph("<b>FECHA:</b> _________________", estilos['Normal'])); elementos.append(Spacer(1, 5))
+
+            data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
+            suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0
+            idx_color = 0
+            for c, l_cant in lienzos.items():
+                if l_cant == 0: continue
+                fila = ["Marcado\n1" if idx_color == 0 else "", c, str(l_cant)]
+                suma_lienzos += l_cant
+                for t in tallas_todas:
+                    prod = l_cant * cuerpos.get(t, 0)
+                    fila.append(str(prod) if prod > 0 else "")
+                    suma_tallas[t] += prod
+                tot_fila = sum(l_cant * cuerpos.get(tx, 0) for tx in grupo_tallas)
+                fila.append(str(tot_fila))
+                gran_total += tot_fila
+                data_t2.append(fila)
+                idx_color += 1
+
+            fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
+            for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
+            fila_final.append(str(gran_total))
+            data_t2.append(fila_final)
+            
+            t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45])
+            t2.setStyle(TableStyle([
+                ('SPAN', (0, 1), (0, idx_color)), ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#fef3c7")), 
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+                ('SPAN', (0, -1), (1, -1)), ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fde68a")), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
+            ]))
+            elementos.append(t2); elementos.append(PageBreak())
+
+            # Preparar datos de inventario para este folio
+            datos_inventario_global.append({"folio": folio_actual, "grupo_tallas": grupo_tallas, "cuerpos": cuerpos, "lienzos": lienzos})
+            folio_actual += 1
+
+        # 4. HOJAS DE INVENTARIO Y SUBIDA A NUBE
+        t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
+        style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=7.5, leading=8)
+        
+        total_ingresado_nube = 0
+        mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ch", "XG": "talla_eg", "EX G": "talla_eg", "T-12": "talla_eg", "T-16": "talla_eg"}
+
+        for f_data in datos_inventario_global:
+            f_num = str(f_data["folio"]).zfill(2)
+            grupo_tallas = f_data["grupo_tallas"]
+            cuerpos = f_data["cuerpos"]
+            lienzos = f_data["lienzos"]
+            
+            t_header_inv = Table([
+                [Paragraph(f"<b>CONTROL DE INVENTARIO (PEDIDO)</b><br/>MODELO: {modelo}", estilos['Normal']), 
+                 Paragraph(f"<b>FOLIO:</b> {f_num}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
+            ], colWidths=[285, 285])
+            elementos.append(t_header_inv); elementos.append(Spacer(1, 15))
+
+            num_est = len(estampados)
+            tablas_estampados = []
+            
+            for i_e, est in enumerate(estampados):
+                title = Paragraph(f"<font color='#d97706'>▐</font> <b>ESTAMPADO {i_e + 1}: {est}</b>", t_title)
+                
+                # CÁLCULOS MATEMÁTICOS PARA LAS 3 TABLAS
+                w_color = 50; w_talla = 20
+                anchos = [w_color] + [w_talla] * len(grupo_tallas)
+                
+                data_tot = [["COLOR"] + grupo_tallas]
+                data_ped = [["COLOR"] + grupo_tallas]
+                data_sob = [["COLOR"] + grupo_tallas]
+                
+                sum_tot = {t: 0 for t in grupo_tallas}
+                sum_ped = {t: 0 for t in grupo_tallas}
+                sum_sob = {t: 0 for t in grupo_tallas}
+                
+                modelo_folio_nube = f"{modelo} {f_num}"
+
+                for c, l_cant in lienzos.items():
+                    if l_cant == 0: continue
+                    r_tot = [Paragraph(c, style_color_inv)]; r_ped = [Paragraph(c, style_color_inv)]; r_sob = [Paragraph(c, style_color_inv)]
+                    
+                    v_stock_nube = {"talla_ch": 0, "talla_m": 0, "talla_g": 0, "talla_eg": 0}
+
+                    for t in grupo_tallas:
+                        # Division por estampado
+                        prod_total = l_cant * cuerpos.get(t, 0)
+                        ped_total = pedidos_app.get(c, {}).get(t, 0)
+                        
+                        base_prod = prod_total // num_est; sobra_prod = prod_total % num_est
+                        prod_est = base_prod + 1 if i_e < sobra_prod else base_prod
+                        
+                        base_ped = ped_total // num_est; sobra_ped = ped_total % num_est
+                        ped_est = base_ped + 1 if i_e < sobra_ped else base_ped
+                        
+                        sob_est = prod_est - ped_est
+                        if sob_est < 0: sob_est = 0
+                        
+                        r_tot.append(str(prod_est) if prod_est>0 else "-")
+                        r_ped.append(str(ped_est) if ped_est>0 else "-")
+                        r_sob.append(str(sob_est) if sob_est>0 else "-")
+                        
+                        sum_tot[t] += prod_est; sum_ped[t] += ped_est; sum_sob[t] += sob_est
+                        
+                        # Guardar en nube solo los sobrantes
+                        if sob_est > 0:
+                            col_sql = mapa_bd.get(t, "talla_eg")
+                            v_stock_nube[col_sql] += sob_est
+                            total_ingresado_nube += sob_est
+
+                    # INYECCIÓN A LA NUBE (SOBRANTES)
+                    if any(v > 0 for v in v_stock_nube.values()):
+                        cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, est, c))
+                        res = cursor.fetchone()
+                        if res:
+                            cursor.execute("UPDATE panel_stock SET talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_eg=talla_eg+%s WHERE id=%s", 
+                                           (v_stock_nube["talla_ch"], v_stock_nube["talla_m"], v_stock_nube["talla_g"], v_stock_nube["talla_eg"], res['id']))
+                            panel_id = res['id']
+                        else:
+                            cursor.execute("INSERT INTO panel_stock (modelo, estampado, color, talla_ch, talla_m, talla_g, talla_eg, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, %s, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
+                                           (modelo_folio_nube, est, c, v_stock_nube["talla_ch"], v_stock_nube["talla_m"], v_stock_nube["talla_g"], v_stock_nube["talla_eg"]))
+                            panel_id = cursor.lastrowid
+
+                        for t in grupo_tallas:
+                            if v_stock_nube[mapa_bd.get(t, "talla_eg")] > 0:
+                                cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, est, c, t))
+                                if not cursor.fetchone():
+                                    cod = generar_codigo_13_nube(cursor, modelo_folio_nube, est, c, t)
+                                    cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
+                                                   (cod, modelo_folio_nube, est, c, t, panel_id))
+                    
+                    data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
+                
+                # Filas de Suma Final
+                data_tot.append(["SUMA"] + [str(sum_tot[t]) for t in grupo_tallas])
+                data_ped.append(["SUMA"] + [str(sum_ped[t]) for t in grupo_tallas])
+                data_sob.append(["SUMA"] + [str(sum_sob[t]) for t in grupo_tallas])
+
+                # Dibujado de las 3 Tablas Lado a Lado
+                style_tabla_3 = TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
+                    ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (1,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (-1,-1), 7.5), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 2), ('TOPPADDING', (0,0), (-1,-1), 2),
+                ])
+                t_tot = Table(data_tot, colWidths=anchos); t_tot.setStyle(style_tabla_3)
+                t_ped = Table(data_ped, colWidths=anchos); t_ped.setStyle(style_tabla_3)
+                t_sob = Table(data_sob, colWidths=anchos); t_sob.setStyle(style_tabla_3)
+
+                wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [t_tot]])
+                wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [t_ped]])
+                wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [t_sob]])
+
+                fila_3_tablas = Table([[wrap_tot, Spacer(5, 1), wrap_ped, Spacer(5, 1), wrap_sob]])
+                fila_3_tablas.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0)]))
+
+                wrap_final = Table([[title], [Spacer(1, 4)], [fila_3_tablas]], colWidths=[580])
+                wrap_final.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
+                
+                tablas_estampados.append(wrap_final)
+
+            # Dibujar el Grid
+            for t_est in tablas_estampados:
+                elementos.append(t_est)
+                elementos.append(Spacer(1, 15))
+            
+            firmas_data = [
+                ["___________________________________", "___________________________________"],
+                ["DOBLADO", "ALMACÉN"],
+                ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
+            ]
+            t_firmas = Table(firmas_data, colWidths=[290, 290])
+            t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,1), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
+            elementos.append(Spacer(1, 10)); elementos.append(t_firmas)
+            
+            if i_f < len(datos_inventario_global) - 1: elementos.append(PageBreak())
+
+        # Finalizar y guardar nube
+        if total_ingresado_nube > 0:
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
+                           (modelo, total_ingresado_nube, fecha_txt))
+                           
+        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_actual, modelo))
+        db.commit(); cursor.close(); db.close()
+
+        doc.build(elementos)
+        pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        buffer.close()
+
+        return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf"})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+        
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
