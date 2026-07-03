@@ -1093,8 +1093,10 @@ def api_magia_madre():
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# HOJA MADRE PEDIDOS (OPTIMIZADA)
+# HOJA MADRE PEDIDOS (OPTIMIZADA CON LÓGICA DE TENDIDO HUMANO)
 # ==============================================================================
+import math
+
 @app.route('/api/app/magia_pedido', methods=['POST'])
 def api_magia_pedido():
     auth_header = request.headers.get('Authorization')
@@ -1131,8 +1133,13 @@ def api_magia_pedido():
                 for t in grupo: tot += t_data.get(t, 0)
             return tot
 
+        # 🔥 LA NUEVA IA: MINIMIZAR LIENZOS PRIMERO, DESPERDICIO DESPUÉS 🔥
         def calcular_desperdicio(grupo_tallas):
-            best_waste = float('inf'); best_cuerpos = {}; best_lienzos = {}
+            best_waste = float('inf')
+            best_lienzos_total = float('inf')
+            best_cuerpos = {}
+            best_lienzos_color = {}
+
             def get_combos(n, current_sum=0):
                 if n == 1: return [[i] for i in range(1, 7 - current_sum)]
                 combos = []
@@ -1144,55 +1151,78 @@ def api_magia_pedido():
             combos = get_combos(len(grupo_tallas))
             for combo in combos:
                 cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
-                lienzos_color = {}; waste = 0
+                lienzos_color = {}
+                waste = 0
+                tot_l = 0
+                
                 for c, peds in pedidos_app.items():
                     req_lienzos = 0
                     for t in grupo_tallas:
                         cant = peds.get(t, 0)
                         if cant > 0: req_lienzos = max(req_lienzos, math.ceil(cant / cuerpos[t]))
                     lienzos_color[c] = req_lienzos
+                    tot_l += req_lienzos
                     for t in grupo_tallas:
                         waste += (req_lienzos * cuerpos[t]) - peds.get(t, 0)
-                if waste < best_waste:
-                    best_waste = waste; best_cuerpos = cuerpos; best_lienzos = lienzos_color
-            return best_waste, best_cuerpos, best_lienzos
+                
+                # REGLA HUMANA: Escoger el que requiera tirar menos lienzos en la mesa.
+                # Si dos opciones piden la misma cantidad de lienzos, elegimos la de menor sobrante.
+                if tot_l < best_lienzos_total or (tot_l == best_lienzos_total and waste < best_waste):
+                    best_lienzos_total = tot_l
+                    best_waste = waste
+                    best_cuerpos = cuerpos
+                    best_lienzos_color = lienzos_color
+                    
+            return best_waste, best_lienzos_total, best_cuerpos, best_lienzos_color
 
         def evaluar_grupo_de_3(grupo_3):
-            w_all, c_all, l_all = calcular_desperdicio(grupo_3)
+            w_all, l_all, c_all, lc_all = calcular_desperdicio(grupo_3)
             tot_ped = total_pedido_grupo(grupo_3)
-            if tot_ped <= 30: return [(grupo_3, c_all, l_all)]
+            
+            if tot_ped <= 30: return [(grupo_3, c_all, lc_all)]
+            
             if w_all > (tot_ped * 0.50):
+                best_split_lienzos = float('inf')
                 best_split_waste = float('inf')
                 best_split = None
                 for i in range(3):
                     single = [grupo_3[i]]
                     pair = [grupo_3[j] for j in range(3) if j != i]
-                    ws, cs, ls = calcular_desperdicio(single)
-                    wp, cp, lp = calcular_desperdicio(pair)
-                    if (ws + wp) < best_split_waste:
-                        best_split_waste = ws + wp; best_split = [(single, cs, ls), (pair, cp, lp)]
-                if best_split_waste < w_all: return best_split
-            return [(grupo_3, c_all, l_all)]
+                    ws, ls, cs, lcs = calcular_desperdicio(single)
+                    wp, lp, cp, lcp = calcular_desperdicio(pair)
+                    
+                    tot_l = ls + lp
+                    tot_w = ws + wp
+                    
+                    if tot_l < best_split_lienzos or (tot_l == best_split_lienzos and tot_w < best_split_waste):
+                        best_split_lienzos = tot_l
+                        best_split_waste = tot_w
+                        best_split = [(single, cs, lcs), (pair, cp, lcp)]
+                        
+                if best_split_lienzos < l_all or (best_split_lienzos == l_all and best_split_waste < w_all): 
+                    return best_split
+                    
+            return [(grupo_3, c_all, lc_all)]
 
         particiones = []; n_tallas = len(tallas_activas)
         if n_tallas <= 2:
-            w, c, l = calcular_desperdicio(tallas_activas); particiones.append((tallas_activas, c, l))
+            w, tl, c, l = calcular_desperdicio(tallas_activas); particiones.append((tallas_activas, c, l))
         elif n_tallas == 3: particiones.extend(evaluar_grupo_de_3(tallas_activas))
         elif n_tallas == 4:
             g1, g2 = tallas_activas[0:2], tallas_activas[2:4]
-            w1, c1, l1 = calcular_desperdicio(g1); particiones.append((g1, c1, l1))
-            w2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
+            w1, tl1, c1, l1 = calcular_desperdicio(g1); particiones.append((g1, c1, l1))
+            w2, tl2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
         elif n_tallas == 5:
             g3, g2 = tallas_activas[0:3], tallas_activas[3:5]
             particiones.extend(evaluar_grupo_de_3(g3))
-            w2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
+            w2, tl2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
         elif n_tallas == 6:
             for i in range(0, 6, 2):
-                g = tallas_activas[i:i+2]; w, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
+                g = tallas_activas[i:i+2]; w, tl, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
         elif n_tallas == 7:
             g3 = tallas_activas[0:3]; particiones.extend(evaluar_grupo_de_3(g3))
             for i in range(3, 7, 2):
-                g = tallas_activas[i:i+2]; w, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
+                g = tallas_activas[i:i+2]; w, tl, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
