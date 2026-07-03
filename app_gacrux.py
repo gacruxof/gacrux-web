@@ -59,7 +59,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# HTML WEB
+# HTML WEB (ACTUALIZADO A 7 TALLAS)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -642,19 +642,25 @@ def logout():
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
 
+# 🔥 AUTO-CURACIÓN DE BASE DE DATOS (MIGRACIÓN INVISIBLE) 🔥
+def auto_curar_db(cursor):
+    columnas = ["talla_t12", "talla_t16", "talla_ex_ch", "talla_ex_g"]
+    for col in columnas:
+        try: cursor.execute(f"ALTER TABLE panel_stock ADD COLUMN {col} INT DEFAULT 0")
+        except: pass
+
 # 🔥 FUNCIÓN MAESTRA DEL PIE DE PÁGINA 🔥
 def dibujar_footer_firmas(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica-Bold", 9)
     canvas.setFillColor(colors.black)
-    canvas.drawCentredString(180, 50, "___________________________________")
-    canvas.drawCentredString(180, 35, "DOBLADO")
-    canvas.drawCentredString(180, 20, "JACQUELINE TLATELPA XOLALTENCO")
-    canvas.drawCentredString(430, 50, "___________________________________")
-    canvas.drawCentredString(430, 35, "ALMACÉN")
-    canvas.drawCentredString(430, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
+    canvas.drawCentredString(150, 50, "___________________________________")
+    canvas.drawCentredString(150, 35, "DOBLADO")
+    canvas.drawCentredString(150, 20, "JACQUELINE TLATELPA XOLALTENCO")
+    canvas.drawCentredString(460, 50, "___________________________________")
+    canvas.drawCentredString(460, 35, "ALMACÉN")
+    canvas.drawCentredString(460, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
     canvas.restoreState()
-
 
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
@@ -842,6 +848,7 @@ def api_subir_lote():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
+        auto_heal_db(cursor)
         
         cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo, estampado, color))
         res = cursor.fetchone()
@@ -855,14 +862,14 @@ def api_subir_lote():
         if res:
             cursor.execute("""
                 UPDATE panel_stock 
-                SET talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_eg=talla_eg+%s,
+                SET talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_ex_g=talla_ex_g+%s,
                     genero=%s, estilo=%s, tipo_prenda=%s
                 WHERE id=%s
             """, (ch, m, g, talla_extra_cant, genero, estilo, tipo_prenda, res['id']))
             panel_id = res['id']
         else:
             cursor.execute("""
-                INSERT INTO panel_stock (modelo, estampado, color, talla_ch, talla_m, talla_g, talla_eg, genero, estilo, tipo_prenda) 
+                INSERT INTO panel_stock (modelo, estampado, color, talla_ch, talla_m, talla_g, talla_ex_g, genero, estilo, tipo_prenda) 
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (modelo, estampado, color, ch, m, g, talla_extra_cant, genero, estilo, tipo_prenda))
             panel_id = cursor.lastrowid
@@ -940,7 +947,8 @@ def api_mapa_codigos():
                    COALESCE(p.talla_ch, 0) as talla_ch, 
                    COALESCE(p.talla_m, 0) as talla_m, 
                    COALESCE(p.talla_g, 0) as talla_g, 
-                   COALESCE(p.talla_ex_g, 0) as talla_ex_g
+                   COALESCE(p.talla_ex_g, 0) as talla_ex_g,
+                   COALESCE(p.talla_eg, 0) as talla_eg
             FROM inventario i
             LEFT JOIN panel_stock p ON 
                 (i.panel_stock_id = p.id) OR 
@@ -960,6 +968,8 @@ def api_mapa_codigos():
             columna = t_map.get(str(r['talla']).upper(), 'talla_ex_g')
             if columna in r:
                 mapa[r['codigo_barras']] = r[columna]
+            else:
+                mapa[r['codigo_barras']] = r.get('talla_eg', 0)
             
         return jsonify(mapa)
     except Exception as e: 
@@ -1047,6 +1057,7 @@ def api_magia_madre():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
+        auto_curar_db(cursor)
         
         datos_corte = []
         for c in colores:
@@ -1137,9 +1148,7 @@ def api_magia_madre():
             cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'HOJA MADRE APP', 'SISTEMA')", 
                            (modelo_folio_nube, total_ingresado, fecha_txt))
 
-        # 🔥 AUTO-INCREMENTO DEL FOLIO EN LA NUBE 🔥
-        siguiente_folio = folios_a_usar[-1] + 1
-        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (siguiente_folio, modelo))
+        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folios_a_usar[-1] + 1, modelo))
         db.commit()
         cursor.close()
         db.close()
@@ -1227,7 +1236,6 @@ def api_magia_madre():
         elementos.append(t2)
         elementos.append(PageBreak())
 
-        # --- DIBUJAR PÁGINAS SIGUIENTES: INVENTARIOS ---
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=7.5, leading=8)
         
@@ -1293,7 +1301,7 @@ def api_magia_madre():
             if i_f < len(datos_inventario_global) - 1:
                 elementos.append(PageBreak())
 
-        # 🔥 LA SOLUCIÓN DEL ERROR CRÍTICO ESTÁ AQUÍ 🔥
+        # 🔥 SOLUCIÓN FIRMAS 🔥
         doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
@@ -1323,6 +1331,7 @@ def api_magia_pedido():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
+        auto_curar_db(cursor)
 
         tallas_activas = set(); colores_activos = set()
         for c, t_data in pedidos_app.items():
@@ -1393,18 +1402,14 @@ def api_magia_pedido():
         estilos = getSampleStyleSheet()
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
 
-        folio_actual = folio_arranque 
-        talla_a_folio = {}
-
         # 1. DIBUJAR HOJAS DE CORTE
         for particion in particiones:
             grupo_tallas, cuerpos, lienzos = particion
-            for t in grupo_tallas: talla_a_folio[t] = str(folio_actual).zfill(2)
             
             t_header_corte = Table([
                 [Paragraph(f"<b>MODELO:</b> {modelo}", style_header_corte), 
                  Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
-                 Paragraph(f"<b>FOLIO:</b> {str(folio_actual).zfill(2)} (PEDIDO)", style_header_corte)],
+                 Paragraph(f"<b>FOLIO:</b> {str(folio_arranque).zfill(2)} (PEDIDO)", style_header_corte)],
                 [Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b> {fecha_txt}", estilos['Normal']), "", Paragraph("<b>FECHA DE ENTREGA:</b> _____________", ParagraphStyle(name='r', alignment=TA_RIGHT))]
             ], colWidths=[190, 190, 190])
             t_header_corte.setStyle(TableStyle([('ALIGN', (0,0), (0,0), 'LEFT'), ('ALIGN', (1,0), (1,0), 'CENTER'), ('ALIGN', (2,0), (2,0), 'RIGHT')]))
@@ -1453,7 +1458,6 @@ def api_magia_pedido():
                 ('SPAN', (0, -1), (1, -1)), ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fde68a")), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
             ]))
             elementos.append(t2); elementos.append(PageBreak())
-            folio_actual += 1
 
         # 2. CALCULAR INVENTARIO UNIFICADO
         total_prod = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
@@ -1462,14 +1466,12 @@ def api_magia_pedido():
             for c, l_cant in lienzos.items():
                 for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos.get(t, 0)
 
-        # 3. DIBUJAR INVENTARIOS UNIFICADOS (DISEÑO 2x2)
-        t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
-        style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=8, leading=9)
+        # 3. DIBUJAR INVENTARIOS UNIFICADOS (DISEÑO 2x2 AMPLIO)
+        style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=9, leading=10)
         
-        str_folios = ", ".join([str(f).zfill(2) for f in range(folio_arranque, folio_actual)])
         t_header_inv = Table([
             [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
-             Paragraph(f"<b>FOLIO:</b> {str_folios} (PEDIDO)<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
+             Paragraph(f"<b>FOLIO:</b> {str(folio_arranque).zfill(2)} (PEDIDO)<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
         ], colWidths=[285, 285])
         elementos.append(t_header_inv); elementos.append(Spacer(1, 15))
 
@@ -1481,16 +1483,17 @@ def api_magia_pedido():
             title = Paragraph(f"<font color='#d97706'>▐</font> <b>ESTAMPADO {i_e + 1}: {est}</b>", ParagraphStyle('titulo_grande', fontSize=12, fontName='Helvetica-Bold'))
             elementos.append(title); elementos.append(Spacer(1, 10))
             
-            w_color = 75; w_talla = 30
-            w_vacio = max(10, (285 - w_color - (w_talla * len(tallas_activas))) / 2.0)
-            anchos = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
+            w_color = 85
+            w_talla = 200 / len(tallas_activas) if tallas_activas else 45
+            if w_talla > 50: w_talla = 50
+            anchos = [w_color] + [w_talla] * len(tallas_activas)
             
-            data_tot = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
-            data_ped = [["COLOR", "", ""] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
-            data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
+            data_tot = [["COLOR"] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
+            data_ped = [["COLOR"] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
+            data_sob = [["COLOR"] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
             
             for c in colores_activos:
-                r_tot = [Paragraph(c, style_color_inv), "", ""]; r_ped = [Paragraph(c, style_color_inv), "", ""]; r_sob = [Paragraph(c, style_color_inv), "", ""]
+                r_tot = [Paragraph(c, style_color_inv)]; r_ped = [Paragraph(c, style_color_inv)]; r_sob = [Paragraph(c, style_color_inv)]
                 for t in tallas_activas:
                     prod = total_prod[c][t]
                     ped = pedidos_app.get(c, {}).get(t, 0)
@@ -1511,7 +1514,7 @@ def api_magia_pedido():
                     
                     # INYECCIÓN A LA NUBE (SOLO SOBRANTES)
                     if sob_est > 0:
-                        modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" # El folio base del pedido
+                        modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" 
                         col_sql = mapa_bd.get(t, "talla_ex_g")
                         
                         cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, est, c))
@@ -1544,25 +1547,24 @@ def api_magia_pedido():
                 
                 data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
             
-            data_tot.append(["SUMA", "", ""] + [str(sum_tot[t]) for t in tallas_activas])
-            data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
-            data_sob.append(["SUMA", "", ""] + [str(sum_sob[t]) for t in tallas_activas])
+            data_tot.append(["SUMA"] + [str(sum_tot[t]) for t in tallas_activas])
+            data_ped.append(["SUMA"] + [str(sum_ped[t]) for t in tallas_activas])
+            data_sob.append(["SUMA"] + [str(sum_sob[t]) for t in tallas_activas])
 
             style_tabla_3 = TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
-                ('SPAN', (0, -1), (2, -1)), ('SPAN', (0, 0), (2, 0)),
-                ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 4), ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (1,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5), ('TOPPADDING', (0,0), (-1,-1), 5),
             ])
             t_tot = Table(data_tot, colWidths=anchos); t_tot.setStyle(style_tabla_3)
             t_ped = Table(data_ped, colWidths=anchos); t_ped.setStyle(style_tabla_3)
             t_sob = Table(data_sob, colWidths=anchos); t_sob.setStyle(style_tabla_3)
 
-            wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=9, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_tot]])
-            wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=9, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]])
-            wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=9, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]])
+            wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=10, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_tot]])
+            wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=10, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]])
+            wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=10, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]])
 
             grid_data = [
                 [wrap_tot, wrap_ped],
@@ -1580,17 +1582,17 @@ def api_magia_pedido():
             cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
                            (modelo, total_ingresado_nube, fecha_txt))
                            
-        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_actual, modelo))
+        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
         db.commit()
         cursor.close()
         db.close()
 
-        # 🔥 LA SOLUCIÓN DEL ERROR CRÍTICO ESTÁ AQUÍ 🔥
+        # 🔥 SOLUCIÓN DEFINITIVA DE FIRMAS 🔥
         doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
-        return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf", 'siguiente_folio': folio_actual})
+        return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf", 'siguiente_folio': folio_arranque + 1})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
