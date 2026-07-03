@@ -1316,7 +1316,7 @@ def api_magia_pedido():
     modelo = req.get('modelo', '').strip().upper()
     estampados = req.get('estampados', [])
     if not estampados: estampados = ["SIN ESTAMPADO"]
-    pedidos_app = req.get('pedidos', {}) # formato: { color: { talla: cantidad_total } }
+    pedidos_app = req.get('pedidos', {}) 
     folio_arranque = int(req.get('folio_arranque', 1))
     
     fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
@@ -1325,17 +1325,25 @@ def api_magia_pedido():
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
 
-        # 1. Identificar tallas activas
+        # 1. Identificar tallas activas y ordenarlas
         tallas_activas = set()
         for c, t_data in pedidos_app.items():
             for t, cant in t_data.items():
                 if cant > 0: tallas_activas.add(t)
         tallas_activas = list(tallas_activas)
-        # Orden lógico
         orden_tallas = {"T-12":1, "T-16":2, "EX CH":3, "CH":4, "M":5, "G":6, "EX G":7}
         tallas_activas.sort(key=lambda x: orden_tallas.get(x, 99))
 
-        # 2. MOTOR DE IA: Optimización de Combinaciones y Separación de Hojas
+        # ==========================================================
+        # 🔥 2. MOTOR DE IA: OPTIMIZACIÓN Y REGLA DEL 50% 🔥
+        # ==========================================================
+        def total_pedido_grupo(grupo):
+            tot = 0
+            for c, t_data in pedidos_app.items():
+                for t in grupo:
+                    tot += t_data.get(t, 0)
+            return tot
+
         def calcular_desperdicio(grupo_tallas):
             best_waste = float('inf'); best_cuerpos = {}; best_lienzos = {}
             def get_combos(n, current_sum=0):
@@ -1362,34 +1370,64 @@ def api_magia_pedido():
                     best_waste = waste; best_cuerpos = cuerpos; best_lienzos = lienzos_color
             return best_waste, best_cuerpos, best_lienzos
 
-        particiones = []
-        if len(tallas_activas) <= 3:
-            w_all, c_all, l_all = calcular_desperdicio(tallas_activas)
-            best_split_waste = float('inf'); best_split = None
-            if len(tallas_activas) == 2:
-                w1, c1, l1 = calcular_desperdicio([tallas_activas[0]])
-                w2, c2, l2 = calcular_desperdicio([tallas_activas[1]])
-                if (w1+w2) < w_all: particiones = [ ([tallas_activas[0]], c1, l1), ([tallas_activas[1]], c2, l2) ]
-                else: particiones = [ (tallas_activas, c_all, l_all) ]
-            elif len(tallas_activas) == 3:
+        def evaluar_grupo_de_3(grupo_3):
+            w_all, c_all, l_all = calcular_desperdicio(grupo_3)
+            tot_ped = total_pedido_grupo(grupo_3)
+            
+            # REGLA ALBERTO 1: Si son 30 piezas o menos (10 por talla aprox), entra en 1 sola hoja de ley.
+            if tot_ped <= 30:
+                return [(grupo_3, c_all, l_all)]
+                
+            # REGLA ALBERTO 2: Umbral del 50%. Si el sobrante supera la mitad del pedido, dividimos.
+            if w_all > (tot_ped * 0.50):
+                best_split_waste = float('inf')
+                best_split = None
                 for i in range(3):
-                    single = [tallas_activas[i]]
-                    pair = [tallas_activas[j] for j in range(3) if j != i]
+                    single = [grupo_3[i]]
+                    pair = [grupo_3[j] for j in range(3) if j != i]
                     ws, cs, ls = calcular_desperdicio(single)
                     wp, cp, lp = calcular_desperdicio(pair)
-                    if ws+wp < best_split_waste:
-                        best_split_waste = ws+wp
-                        best_split = [ (single, cs, ls), (pair, cp, lp) ]
-                if best_split_waste < w_all: particiones = best_split
-                else: particiones = [ (tallas_activas, c_all, l_all) ]
-            else: particiones = [ (tallas_activas, c_all, l_all) ]
-        else:
-            for i in range(0, len(tallas_activas), 2):
-                grupo = tallas_activas[i:i+2]
-                w, c, l = calcular_desperdicio(grupo)
-                particiones.append((grupo, c, l))
+                    if (ws + wp) < best_split_waste:
+                        best_split_waste = ws + wp
+                        best_split = [(single, cs, ls), (pair, cp, lp)]
+                if best_split_waste < w_all:
+                    return best_split
+                    
+            # Si el sobrante es 49% o menos (o la división sale peor), se queda en 1 sola hoja.
+            return [(grupo_3, c_all, l_all)]
 
+        particiones = []
+        n_tallas = len(tallas_activas)
+        
+        # Lógica de distribución inteligente
+        if n_tallas <= 2:
+            w, c, l = calcular_desperdicio(tallas_activas)
+            particiones.append((tallas_activas, c, l))
+        elif n_tallas == 3:
+            particiones.extend(evaluar_grupo_de_3(tallas_activas))
+        elif n_tallas == 4:
+            g1, g2 = tallas_activas[0:2], tallas_activas[2:4]
+            w1, c1, l1 = calcular_desperdicio(g1); particiones.append((g1, c1, l1))
+            w2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
+        elif n_tallas == 5:
+            # Si son 5, mandamos 3 a la evaluación inteligente y 2 directos
+            g3, g2 = tallas_activas[0:3], tallas_activas[3:5]
+            particiones.extend(evaluar_grupo_de_3(g3))
+            w2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
+        elif n_tallas == 6:
+            for i in range(0, 6, 2):
+                g = tallas_activas[i:i+2]
+                w, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
+        elif n_tallas == 7:
+            g3 = tallas_activas[0:3]
+            particiones.extend(evaluar_grupo_de_3(g3))
+            for i in range(3, 7, 2):
+                g = tallas_activas[i:i+2]
+                w, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
+
+        # ==========================================================
         # 3. GENERAR PDFs
+        # ==========================================================
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=20)
         elementos = []
@@ -1462,11 +1500,12 @@ def api_magia_pedido():
             ]))
             elementos.append(t2); elementos.append(PageBreak())
 
-            # Preparar datos de inventario para este folio
             datos_inventario_global.append({"folio": folio_actual, "grupo_tallas": grupo_tallas, "cuerpos": cuerpos, "lienzos": lienzos})
             folio_actual += 1
 
+        # ==========================================================
         # 4. HOJAS DE INVENTARIO Y SUBIDA A NUBE
+        # ==========================================================
         t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=7.5, leading=8)
         
@@ -1491,7 +1530,6 @@ def api_magia_pedido():
             for i_e, est in enumerate(estampados):
                 title = Paragraph(f"<font color='#d97706'>▐</font> <b>ESTAMPADO {i_e + 1}: {est}</b>", t_title)
                 
-                # CÁLCULOS MATEMÁTICOS PARA LAS 3 TABLAS
                 w_color = 50; w_talla = 20
                 anchos = [w_color] + [w_talla] * len(grupo_tallas)
                 
@@ -1512,7 +1550,6 @@ def api_magia_pedido():
                     v_stock_nube = {"talla_ch": 0, "talla_m": 0, "talla_g": 0, "talla_eg": 0}
 
                     for t in grupo_tallas:
-                        # Division por estampado
                         prod_total = l_cant * cuerpos.get(t, 0)
                         ped_total = pedidos_app.get(c, {}).get(t, 0)
                         
@@ -1531,7 +1568,6 @@ def api_magia_pedido():
                         
                         sum_tot[t] += prod_est; sum_ped[t] += ped_est; sum_sob[t] += sob_est
                         
-                        # Guardar en nube solo los sobrantes
                         if sob_est > 0:
                             col_sql = mapa_bd.get(t, "talla_eg")
                             v_stock_nube[col_sql] += sob_est
@@ -1560,12 +1596,10 @@ def api_magia_pedido():
                     
                     data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
                 
-                # Filas de Suma Final
                 data_tot.append(["SUMA"] + [str(sum_tot[t]) for t in grupo_tallas])
                 data_ped.append(["SUMA"] + [str(sum_ped[t]) for t in grupo_tallas])
                 data_sob.append(["SUMA"] + [str(sum_sob[t]) for t in grupo_tallas])
 
-                # Dibujado de las 3 Tablas Lado a Lado
                 style_tabla_3 = TableStyle([
                     ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
                     ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (1,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
@@ -1589,7 +1623,6 @@ def api_magia_pedido():
                 
                 tablas_estampados.append(wrap_final)
 
-            # Dibujar el Grid
             for t_est in tablas_estampados:
                 elementos.append(t_est)
                 elementos.append(Spacer(1, 15))
@@ -1605,7 +1638,6 @@ def api_magia_pedido():
             
             if i_f < len(datos_inventario_global) - 1: elementos.append(PageBreak())
 
-        # Finalizar y guardar nube
         if total_ingresado_nube > 0:
             cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
                            (modelo, total_ingresado_nube, fecha_txt))
