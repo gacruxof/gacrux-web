@@ -1,8 +1,17 @@
 import os
 import datetime
+import io
+import base64
+import json
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import mysql.connector
+
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 try:
     from dotenv import load_dotenv
@@ -49,7 +58,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# HTML WEB (INTACTO)
+# HTML WEB (PANEL DE ALMACÉN)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -523,7 +532,7 @@ HTML_BASE = """
 """
 
 # ==============================================================================
-# RUTAS WEB PRINCIPALES (INTACTAS)
+# RUTAS WEB PRINCIPALES 
 # ==============================================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -644,7 +653,7 @@ def logout():
     return redirect(url_for('login'))
 
 # ==============================================================================
-# RUTAS DE LA APP MÓVIL Y NUEVO MODO DESARROLLADOR
+# RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
 
 @app.route('/api/login', methods=['POST'])
@@ -713,7 +722,6 @@ def api_descontar():
                         db.commit()
                         cursor.close(); db.close()
                         
-                        # 🔥 MAGIA AQUÍ: Devolvemos el nombre exacto de la prenda en vez del mensaje genérico
                         nombre_prenda = f"{prenda['modelo']} {prenda['estampado']} {prenda['color']} {prenda['talla']}"
                         return jsonify({'status': 'ok', 'msg': nombre_prenda})
         
@@ -752,9 +760,6 @@ def api_pos_enviar():
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
 
-# ==============================================================================
-# RUTAS DE ADMINISTRADOR (NUEVAS Y AUTOCOMPLETADO)
-# ==============================================================================
 def generar_codigo_13_digitos(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
@@ -900,7 +905,7 @@ def api_actualizar_filtros():
         db.commit(); cursor.close(); db.close()
         return jsonify({'status': 'ok'})
     except Exception as e: return jsonify({'error': str(e)}), 500
-# 🔥 NUEVA RUTA PARA LOS LÍMITES OFFLINE 🔥
+
 @app.route('/api/app/mapa_codigos', methods=['GET'])
 def api_mapa_codigos():
     auth_header = request.headers.get('Authorization')
@@ -908,7 +913,6 @@ def api_mapa_codigos():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        # Trae todos los códigos y los enlaza con su stock real
         cursor.execute("""
             SELECT i.codigo_barras, i.talla, 
                    COALESCE(p.talla_ch, 0) as talla_ch, 
@@ -932,9 +936,7 @@ def api_mapa_codigos():
         return jsonify(mapa)
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
-# ==============================================================================
-# MIGRACIÓN
-# ==============================================================================
+
 @app.route('/api/migrar_bd')
 def api_migrar_bd():
     try:
@@ -968,24 +970,16 @@ def api_migrar_bd():
         db.commit(); cursor.close(); db.close()
         return f"<h1>Migración Gacrux Completada</h1><p>{'<br>'.join(mensajes)}</p>"
     except Exception as e: return f"<h1>Error Crítico</h1><p>{str(e)}</p>"
+
 # ==============================================================================
 # 🔥 MOTOR DE HOJA MADRE MÓVIL Y GESTOR DE RECETAS EN NUBE 🔥
 # ==============================================================================
-import io
-import base64
-import json
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 @app.route('/api/app/receta/<modelo>', methods=['GET'])
 def api_get_receta(modelo):
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        # Aseguramos que la tabla exista
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS recetas_madre (
                 modelo VARCHAR(100) PRIMARY KEY,
@@ -1003,7 +997,6 @@ def api_get_receta(modelo):
     except Exception as e:
         return jsonify({})
 
-# 🔥 ALGORITMO DE CÓDIGO DE BARRAS DE 13 DÍGITOS 🔥
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
@@ -1129,8 +1122,7 @@ def api_magia_madre():
                         if fila["tallas"][t] > 0:
                             cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, est_nombre, c, t))
                             if not cursor.fetchone():
-                                mod_str = f"{panel_id:05d}"; est_str = "00001"; col_str = "01"; t_id = 9
-                                cod = f"{mod_str}{est_str}{col_str}{t_id}"
+                                cod = generar_codigo_13_nube(cursor, modelo_folio_nube, est_nombre, c, t)
                                 cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
                                                (cod, modelo_folio_nube, est_nombre, c, t, panel_id))
                                                
@@ -1145,7 +1137,7 @@ def api_magia_madre():
         cursor.close(); db.close()
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=20)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=80, bottomMargin=20)
         elementos = []
         estilos = getSampleStyleSheet()
 
