@@ -59,7 +59,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# HTML WEB
+# HTML WEB (7 TALLAS)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -642,13 +642,7 @@ def logout():
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
 
-def auto_curar_db(cursor):
-    columnas = ["talla_t12", "talla_t16", "talla_ex_ch", "talla_ex_g"]
-    for col in columnas:
-        try: cursor.execute(f"ALTER TABLE panel_stock ADD COLUMN {col} INT DEFAULT 0")
-        except: pass
-
-# 🔥 FUNCIÓN DE FIRMAS COMO CALLBACK LIGERO Y SEGURO 🔥
+# 🔥 FUNCIÓN MAESTRA DEL PIE DE PÁGINA (CALLBACK) 🔥
 def dibujar_footer_firmas(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica-Bold", 9)
@@ -847,7 +841,6 @@ def api_subir_lote():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        auto_curar_db(cursor)
         
         cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo, estampado, color))
         res = cursor.fetchone()
@@ -1056,7 +1049,6 @@ def api_magia_madre():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        auto_curar_db(cursor)
         
         datos_corte = []
         for c in colores:
@@ -1147,6 +1139,7 @@ def api_magia_madre():
             cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'HOJA MADRE APP', 'SISTEMA')", 
                            (modelo_folio_nube, total_ingresado, fecha_txt))
 
+        # 🔥 AUTO-INCREMENTO DEL FOLIO EN LA NUBE 🔥
         siguiente_folio = folios_a_usar[-1] + 1
         cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (siguiente_folio, modelo))
         db.commit()
@@ -1238,10 +1231,20 @@ def api_magia_madre():
 
         # --- DIBUJAR PÁGINAS SIGUIENTES: INVENTARIOS ---
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
-        style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=7.5, leading=8)
+        
+        # 🔥 MICRO-AJUSTE DINÁMICO NORMAL 🔥
+        num_colors = len(colores)
+        if num_colors <= 6:
+            f_size = 8; pad = 4
+        elif num_colors <= 10:
+            f_size = 7.5; pad = 3
+        else:
+            f_size = 6.5; pad = 1
+            
+        style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
         
         w_color = 65; w_talla = 22; espacio_total_tabla = 285 
-        w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
+        w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
 
         for i_f, data_folio in enumerate(datos_inventario_global):
@@ -1276,14 +1279,13 @@ def api_magia_madre():
                 for t in tallas_usadas: f_tot.append(str(totales_tallas[t]))
                 data_t.append(f_tot)
 
-                # 🔥 MARGEN AMPLIADO PARA DOBLADO (NORMAL) 🔥
                 t_inv = Table(data_t, colWidths=anchos_columnas)
                 t_inv.setStyle(TableStyle([
                     ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
                     ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
                     ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")), 
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8),
+                    ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")), 
+                    ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                 ]))
                 
                 wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285])
@@ -1294,7 +1296,7 @@ def api_magia_madre():
 
             grid_data = [
                 [tablas_estampados[0], tablas_estampados[1]],
-                [Spacer(1, 20), Spacer(1, 20)], 
+                [Spacer(1, 15), Spacer(1, 15)], 
                 [tablas_estampados[2], tablas_estampados[3]]
             ]
             t_grid = Table(grid_data, colWidths=[291, 291])
@@ -1304,7 +1306,6 @@ def api_magia_madre():
             if i_f < len(datos_inventario_global) - 1:
                 elementos.append(PageBreak())
 
-        # 🔥 SOLUCIÓN FIRMAS 🔥
         doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
@@ -1334,7 +1335,6 @@ def api_magia_pedido():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        auto_curar_db(cursor)
 
         tallas_activas = set(); colores_activos = set()
         for c, t_data in pedidos_app.items():
@@ -1465,7 +1465,6 @@ def api_magia_pedido():
                 ('SPAN', (0, -1), (1, -1)), ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fde68a")), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
             ]))
             elementos.append(t2); elementos.append(PageBreak())
-            folio_actual += 1
 
         # 2. CALCULAR INVENTARIO UNIFICADO
         total_prod = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
@@ -1474,10 +1473,8 @@ def api_magia_pedido():
             for c, l_cant in lienzos.items():
                 for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos.get(t, 0)
 
-        # 3. DIBUJAR INVENTARIOS UNIFICADOS (DISEÑO CHUNKING Y MICRO-AJUSTE)
+        # 3. DIBUJAR INVENTARIOS UNIFICADOS (CHUNKING)
         t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
-        
-        style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=6.5, leading=7)
         
         t_header_inv = Table([
             [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
@@ -1489,7 +1486,8 @@ def api_magia_pedido():
         total_ingresado_nube = 0
         mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
 
-        MAX_COLORS = 12
+        # 🔥 LÍMITE (CHUNKING): MÁXIMO 10 COLORES POR TABLA PARA NO ROMPER LA HOJA 🔥
+        MAX_COLORS = 10
         color_chunks = [colores_activos[i:i + MAX_COLORS] for i in range(0, len(colores_activos), MAX_COLORS)]
 
         for i_e, est in enumerate(estampados):
@@ -1500,16 +1498,27 @@ def api_magia_pedido():
                 title = Paragraph(title_text, ParagraphStyle('titulo_grande', fontSize=10, fontName='Helvetica-Bold'))
                 elementos.append(title); elementos.append(Spacer(1, 8))
                 
-                w_color = 70; w_talla = 200 / len(tallas_activas) if tallas_activas else 45
-                if w_talla > 45: w_talla = 45
-                anchos = [w_color] + [w_talla] * len(tallas_activas)
+                # 🔥 MICRO-AJUSTE DINÁMICO PEDIDO 🔥
+                num_colors = len(color_chunk)
+                if num_colors <= 6:
+                    f_size = 8; pad = 4
+                elif num_colors <= 10:
+                    f_size = 7.5; pad = 3
+                else:
+                    f_size = 6.5; pad = 1
+                    
+                style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
                 
-                data_tot = [["COLOR"] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
-                data_ped = [["COLOR"] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
-                data_sob = [["COLOR"] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
+                w_color = 65; w_talla = 22; espacio_total_tabla = 285 
+                w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
+                anchos = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
+                
+                data_tot = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
+                data_ped = [["COLOR", "", ""] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
+                data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
                 
                 for c in color_chunk:
-                    r_tot = [Paragraph(c, style_color_inv)]; r_ped = [Paragraph(c, style_color_inv)]; r_sob = [Paragraph(c, style_color_inv)]
+                    r_tot = [Paragraph(c, style_color_inv), "", ""]; r_ped = [Paragraph(c, style_color_inv), "", ""]; r_sob = [Paragraph(c, style_color_inv), "", ""]
                     for t in tallas_activas:
                         prod = total_prod[c][t]
                         ped = pedidos_app.get(c, {}).get(t, 0)
@@ -1528,6 +1537,7 @@ def api_magia_pedido():
                         
                         sum_tot[t] += prod_est; sum_ped[t] += ped_est; sum_sob[t] += sob_est
                         
+                        # INYECCIÓN A LA NUBE (SOLO SOBRANTES)
                         if sob_est > 0:
                             modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" 
                             col_sql = mapa_bd.get(t, "talla_ex_g")
@@ -1562,25 +1572,26 @@ def api_magia_pedido():
                     
                     data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
                 
-                data_tot.append(["SUMA"] + [str(sum_tot[t]) for t in tallas_activas])
-                data_ped.append(["SUMA"] + [str(sum_ped[t]) for t in tallas_activas])
-                data_sob.append(["SUMA"] + [str(sum_sob[t]) for t in tallas_activas])
+                data_tot.append(["SUMA", "", ""] + [str(sum_tot[t]) for t in tallas_activas])
+                data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
+                data_sob.append(["SUMA", "", ""] + [str(sum_sob[t]) for t in tallas_activas])
 
-                # 🔥 MARGEN AMPLIADO PARA DOBLADO (PEDIDO) 🔥
+                # 🔥 ESTILO FINAL CON MÁRGENES GRANDES 🔥
                 style_tabla_3 = TableStyle([
                     ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
-                    ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (1,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
-                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0,0), (-1,-1), 7), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8),
+                    ('SPAN', (0, -1), (2, -1)), ('SPAN', (0, 0), (2, 0)),
+                    ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                 ])
                 t_tot = Table(data_tot, colWidths=anchos); t_tot.setStyle(style_tabla_3)
                 t_ped = Table(data_ped, colWidths=anchos); t_ped.setStyle(style_tabla_3)
                 t_sob = Table(data_sob, colWidths=anchos); t_sob.setStyle(style_tabla_3)
 
-                wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,3)], [t_tot]])
-                wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,3)], [t_ped]])
-                wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,3)], [t_sob]])
+                wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_tot]])
+                wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]])
+                wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]])
 
                 grid_data = [
                     [wrap_tot, wrap_ped],
@@ -1604,7 +1615,6 @@ def api_magia_pedido():
         cursor.close()
         db.close()
 
-        # 🔥 SOLUCIÓN FIRMAS 🔥
         doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
