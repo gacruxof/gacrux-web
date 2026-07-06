@@ -8,6 +8,7 @@ from flask import Flask, render_template_string, request, jsonify, redirect, url
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import mysql.connector
 
+from PIL import Image as PILImage
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as RLImage, KeepInFrame
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -46,20 +47,16 @@ class UsuarioWeb(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        db = conectar_bd()
-        cursor = db.cursor(dictionary=True)
+        db = conectar_bd(); cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE id = %s", (user_id,))
         res = cursor.fetchone()
-        cursor.close()
-        db.close()
-        if res:
-            return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'], res['rol_puesto'])
-    except:
-        pass
+        cursor.close(); db.close()
+        if res: return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'], res['rol_puesto'])
+    except: pass
     return None
 
 # ==============================================================================
-# HTML WEB (SE MANTIENE INTACTO)
+# HTML WEB (7 TALLAS)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -641,19 +638,6 @@ def logout():
 # ==============================================================================
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
-
-def dibujar_footer_firmas(canvas, doc):
-    canvas.saveState()
-    canvas.setFont("Helvetica-Bold", 9)
-    canvas.setFillColor(colors.black)
-    canvas.drawCentredString(150, 50, "___________________________________")
-    canvas.drawCentredString(150, 35, "DOBLADO")
-    canvas.drawCentredString(150, 20, "JACQUELINE TLATELPA XOLALTENCO")
-    canvas.drawCentredString(460, 50, "___________________________________")
-    canvas.drawCentredString(460, 35, "ALMACÉN")
-    canvas.drawCentredString(460, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
-    canvas.restoreState()
-
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
@@ -808,7 +792,6 @@ def api_app_bases():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        # 🔥 EL SECRETO ESTÁ AQUÍ: SELECT id, nombre. NUNCA SELECT *. ASÍ NO COLAPSA ENVIANDO LA IMAGEN A FLUTTER 🔥
         cursor.execute("SELECT id, nombre, genero, estilo, tipo_prenda, formato_img FROM modelos_base ORDER BY nombre ASC")
         modelos = cursor.fetchall()
         cursor.execute("SELECT id, nombre FROM colores_base ORDER BY nombre ASC")
@@ -893,7 +876,7 @@ def api_subir_lote():
             
         if total_ingresado > 0:
             fecha_a = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, %s, %s, %s, %s, 0, 0, %s, 'INGRESO APP LOTE', %s)", 
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE', %s)", 
                            (modelo, estampado, color, "MÚLTIPLE", total_ingresado, fecha_a, realizado_por))
             
         db.commit()
@@ -1050,7 +1033,6 @@ def api_magia_madre():
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
         
-        # 🔥 EL CEREBRO NUEVO: EXTRAER IMAGEN Y CUERPOS POR ID 🔥
         cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
         row_img = cursor.fetchone()
         imagen_blob = row_img['imagen_dibujo'] if row_img else None
@@ -1167,13 +1149,12 @@ def api_magia_madre():
         cursor.close()
         db.close()
 
-        # 🔥 CONSTRUCCIÓN DEL PDF CON LA IMAGEN Y LETRAS ROJAS 🔥
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
         elementos = []
         estilos = getSampleStyleSheet()
         estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
-        
+
         if imagen_blob:
             b_io = io.BytesIO(imagen_blob)
             w_img = 220 if "2500" in formato_img else 130
@@ -1265,7 +1246,7 @@ def api_magia_madre():
         elementos.append(tablas_encogibles)
         elementos.append(PageBreak())
 
-        # 🔥 INVENTARIOS (COMPRIMIBLES Y ESTÁTICOS) 🔥
+        # 🔥 INVENTARIOS UNIFICADOS (4 POR HOJA SIN CALLBACK) 🔥
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         MAX_COLORS = 10
         color_chunks = [colores[i:i + MAX_COLORS] for i in range(0, len(colores), MAX_COLORS)]
@@ -1274,14 +1255,14 @@ def api_magia_madre():
             folio = data_folio["folio"]
             estampados_data = data_folio["estampados"]
 
-            t_header_inv = Table([
-                [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
-                 Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-            ], colWidths=[285, 285])
+            for chunk_idx, color_chunk in enumerate(color_chunks):
+                t_header_inv = Table([
+                    [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
+                     Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
+                ], colWidths=[285, 285])
 
-            for i_e, est_item in enumerate(estampados_data):
-                for chunk_idx, color_chunk in enumerate(color_chunks):
-                    
+                tablas_estampados = []
+                for i_e, est_item in enumerate(estampados_data):
                     est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]
                     
                     title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {i_e + 1}: {est_nombre}</b>"
@@ -1292,9 +1273,8 @@ def api_magia_madre():
                     if num_colors_chunk <= 6: f_size = 8; pad = 4
                     elif num_colors_chunk <= 10: f_size = 7.5; pad = 3
                     else: f_size = 6.5; pad = 1
-                    
+                        
                     style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                    
                     w_color = 65; w_talla = 22; espacio_total_tabla = 285 
                     w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
                     anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
@@ -1327,31 +1307,37 @@ def api_magia_madre():
                     
                     wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285])
                     wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
-                    
-                    grid_data = [[wrapper_table, ""], [Spacer(1, 15), Spacer(1, 15)], ["", ""]]
-                    t_grid = Table(grid_data, colWidths=[291, 291])
-                    t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
-                    
-                    firmas_data = [
-                        [" ", " "], [" ", " "], [" ", " "],
-                        ["___________________________________", "___________________________________"],
-                        ["DOBLADO", "ALMACÉN"],
-                        ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
-                    ]
-                    t_firmas = Table(firmas_data, colWidths=[291, 291])
-                    t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
-                    
-                    t_master = Table([[t_header_inv], [t_grid], [t_firmas]], colWidths=[582], rowHeights=[60, 490, 130]) 
-                    t_master.setStyle(TableStyle([
-                        ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,2), (0,2), 'BOTTOM'),
-                        ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
-                        ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
-                    ]))
-                    elementos.append(t_master)
-                    if chunk_idx < len(color_chunks) - 1 or i_e < len(estampados_data) - 1 or i_f < len(datos_inventario_global) - 1:
-                        elementos.append(PageBreak())
+                    tablas_estampados.append(wrapper_table)
 
-        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
+                while len(tablas_estampados) < 4: tablas_estampados.append("")
+
+                grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
+                t_grid = Table(grid_data, colWidths=[291, 291])
+                t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
+                
+                firmas_data = [
+                    [" ", " "], [" ", " "], [" ", " "],
+                    ["___________________________________", "___________________________________"],
+                    ["DOBLADO", "ALMACÉN"],
+                    ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
+                ]
+                t_firmas = Table(firmas_data, colWidths=[291, 291])
+                t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
+                
+                wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=490, content=[t_grid], mode='shrink', vAlign='TOP')
+                t_master = Table([[t_header_inv], [wrap_t_grid], [t_firmas]], colWidths=[582], rowHeights=[60, 490, 130]) 
+                t_master.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,2), (0,2), 'BOTTOM'),
+                    ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
+                ]))
+                elementos.append(t_master)
+                
+                # 🔥 ELIMINADO EL SALTO DE LÍNEA EXTRA DEL FINAL 🔥
+                if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1):
+                    elementos.append(PageBreak())
+
+        doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
@@ -1444,7 +1430,6 @@ def api_magia_pedido():
             particiones.extend(evaluar_grupo_de_3(tallas_activas[0:3]))
             for i in range(3, 7, 2): g = tallas_activas[i:i+2]; w, tl, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
 
-        # 🔥 CARGAR IMÁGENES Y CUERPOS POR ID DESDE LA NUBE 🔥
         cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
         row_img = cursor.fetchone()
         imagen_blob = row_img['imagen_dibujo'] if row_img else None
@@ -1467,7 +1452,7 @@ def api_magia_pedido():
         if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []
         estilos = getSampleStyleSheet()
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
@@ -1549,6 +1534,8 @@ def api_magia_pedido():
                 content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], 
                 mode='shrink', vAlign='TOP'
             )
+            elementos.append(t_header_corte)
+            elementos.append(Spacer(1, 10))
             elementos.append(tablas_encogibles)
             elementos.append(PageBreak())
 
@@ -1559,7 +1546,7 @@ def api_magia_pedido():
             for c, l_cant in lienzos.items():
                 for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos_dict.get(t, 0)
 
-        # 3. DIBUJAR INVENTARIOS UNIFICADOS (CHUNKING)
+        # 3. DIBUJAR INVENTARIOS UNIFICADOS (1 ESTAMPADO POR HOJA)
         t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         
         num_est = len(estampados)
@@ -1696,7 +1683,9 @@ def api_magia_pedido():
                     ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
                 ]))
                 elementos.append(t_master)
-                if chunk_idx < len(color_chunks) - 1 or i_e < len(estampados) - 1:
+                
+                # 🔥 ELIMINADO EL SALTO DE LÍNEA EXTRA DEL FINAL 🔥
+                if not (i_e == len(estampados) - 1 and chunk_idx == len(color_chunks) - 1):
                     elementos.append(PageBreak())
 
         if total_ingresado_nube > 0:
@@ -1708,7 +1697,7 @@ def api_magia_pedido():
         cursor.close()
         db.close()
 
-        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
+        doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
