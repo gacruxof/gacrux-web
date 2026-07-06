@@ -47,8 +47,7 @@ class UsuarioWeb(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        db = conectar_bd()
-        cursor = db.cursor(dictionary=True)
+        db = conectar_bd(); cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE id = %s", (user_id,))
         res = cursor.fetchone()
         cursor.close(); db.close()
@@ -640,7 +639,6 @@ def logout():
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
 
-# 🔥 FUNCIÓN MAESTRA DEL PIE DE PÁGINA (CALLBACK) 🔥
 def dibujar_footer_firmas(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica-Bold", 9)
@@ -1085,7 +1083,7 @@ def api_magia_madre():
         est_por_folio = [estampados[i:i + 4] for i in range(0, len(estampados), 4)]
         datos_inventario_global = []
 
-        total_ingresado = 0
+        total_ingresado_nube = 0
         mapa_bd = {
             "T-12": "talla_t12", "T-16": "talla_t16", "EX CH": "talla_ex_ch",
             "CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX G": "talla_ex_g"
@@ -1129,7 +1127,7 @@ def api_magia_madre():
                         if cant > 0:
                             col_sql = mapa_bd.get(t, "talla_ex_g")
                             v_stock[col_sql] += cant
-                            total_ingresado += cant
+                            total_ingresado_nube += cant
 
                     if res:
                         cursor.execute("""
@@ -1154,9 +1152,9 @@ def api_magia_madre():
                                 cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
                                                (cod, modelo_folio_nube, est_nombre, c, t, panel_id))
                                                
-        if total_ingresado > 0:
+        if total_ingresado_nube > 0:
             cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'HOJA MADRE APP', 'SISTEMA')", 
-                           (modelo, total_ingresado, fecha_txt))
+                           (modelo, total_ingresado_nube, fecha_txt))
 
         siguiente_folio = folios_a_usar[-1] + 1
         cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (siguiente_folio, modelo))
@@ -1270,9 +1268,7 @@ def api_magia_madre():
             folio = data_folio["folio"]
             estampados_data = data_folio["estampados"]
 
-            # 🔥 AGRUPAR EN BLOQUES DE 4 ESTAMPADOS PARA NO SALTAR PÁGINA ANTES DE TIEMPO 🔥
             for chunk_idx, color_chunk in enumerate(color_chunks):
-                # La estructura cambia aquí: agrupamos los estampados en bloques de 4
                 estampados_por_hoja = [estampados_data[i:i + 4] for i in range(0, len(estampados_data), 4)]
                 
                 for lote_estampados in estampados_por_hoja:
@@ -1285,7 +1281,6 @@ def api_magia_madre():
                     for est_item in lote_estampados:
                         est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]
                         
-                        # Extraemos el número original del estampado usando su nombre
                         original_idx = estampados.index(est_nombre) + 1 if est_nombre in estampados else 1
                         
                         title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {original_idx}: {est_nombre}</b>"
@@ -1341,21 +1336,10 @@ def api_magia_madre():
                     wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=600, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
                     elementos.append(wrap_t_grid)
                     
-                    # 🔥 AHORA SÍ CONTROLAMOS EL SALTO MANUALMENTE Y NO ENVIAMOS FIRMAS AUTOMÁTICAS 🔥
                     if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_estampados == estampados_por_hoja[-1]):
                         elementos.append(PageBreak())
 
-        if total_ingresado_nube > 0:
-            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
-                           (modelo, total_ingresado_nube, fecha_txt))
-                           
-        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
-        db.commit()
-        cursor.close()
-        db.close()
-
-        # 🔥 AQUI SE REMOVIERON LOS CALLBACKS TRAICIONEROS 🔥
-        doc.build(elementos)
+        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
@@ -1470,7 +1454,7 @@ def api_magia_pedido():
         if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []
         estilos = getSampleStyleSheet()
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
@@ -1685,7 +1669,6 @@ def api_magia_pedido():
                 wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=600, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
                 elementos.append(wrap_t_grid)
                 
-                # 🔥 ELIMINADO EL SALTO DE LÍNEA EXTRA DEL FINAL 🔥
                 if not (i_e == len(estampados) - 1 and chunk_idx == len(color_chunks) - 1):
                     elementos.append(PageBreak())
 
@@ -1698,8 +1681,7 @@ def api_magia_pedido():
         cursor.close()
         db.close()
 
-        # 🔥 AQUI SE REMOVIERON LOS CALLBACKS TRAICIONEROS 🔥
-        doc.build(elementos)
+        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
