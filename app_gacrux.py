@@ -47,7 +47,8 @@ class UsuarioWeb(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        db = conectar_bd(); cursor = db.cursor(dictionary=True)
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE id = %s", (user_id,))
         res = cursor.fetchone()
         cursor.close(); db.close()
@@ -638,6 +639,20 @@ def logout():
 # ==============================================================================
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
+
+# 🔥 FUNCIÓN MAESTRA DEL PIE DE PÁGINA (CALLBACK) 🔥
+def dibujar_footer_firmas(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica-Bold", 9)
+    canvas.setFillColor(colors.black)
+    canvas.drawCentredString(150, 50, "___________________________________")
+    canvas.drawCentredString(150, 35, "DOBLADO")
+    canvas.drawCentredString(150, 20, "JACQUELINE TLATELPA XOLALTENCO")
+    canvas.drawCentredString(460, 50, "___________________________________")
+    canvas.drawCentredString(460, 35, "ALMACÉN")
+    canvas.drawCentredString(460, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
+    canvas.restoreState()
+
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
@@ -1246,7 +1261,7 @@ def api_magia_madre():
         elementos.append(tablas_encogibles)
         elementos.append(PageBreak())
 
-        # 🔥 INVENTARIOS UNIFICADOS (4 POR HOJA SIN CALLBACK) 🔥
+        # 🔥 INVENTARIOS UNIFICADOS COMPACTOS 🔥
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         MAX_COLORS = 10
         color_chunks = [colores[i:i + MAX_COLORS] for i in range(0, len(colores), MAX_COLORS)]
@@ -1255,88 +1270,91 @@ def api_magia_madre():
             folio = data_folio["folio"]
             estampados_data = data_folio["estampados"]
 
+            # 🔥 AGRUPAR EN BLOQUES DE 4 ESTAMPADOS PARA NO SALTAR PÁGINA ANTES DE TIEMPO 🔥
             for chunk_idx, color_chunk in enumerate(color_chunks):
-                t_header_inv = Table([
-                    [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
-                     Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-                ], colWidths=[285, 285])
+                # La estructura cambia aquí: agrupamos los estampados en bloques de 4
+                estampados_por_hoja = [estampados_data[i:i + 4] for i in range(0, len(estampados_data), 4)]
+                
+                for lote_estampados in estampados_por_hoja:
+                    t_header_inv = Table([
+                        [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
+                         Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
+                    ], colWidths=[285, 285])
 
-                tablas_estampados = []
-                for i_e, est_item in enumerate(estampados_data):
-                    est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]
-                    
-                    title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {i_e + 1}: {est_nombre}</b>"
-                    if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
-                    title = Paragraph(title_text, t_title)
-                    
-                    num_colors_chunk = len(color_chunk)
-                    if num_colors_chunk <= 6: f_size = 8; pad = 4
-                    elif num_colors_chunk <= 10: f_size = 7.5; pad = 3
-                    else: f_size = 6.5; pad = 1
+                    tablas_estampados = []
+                    for est_item in lote_estampados:
+                        est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]
                         
-                    style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                    w_color = 65; w_talla = 22; espacio_total_tabla = 285 
-                    w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
-                    anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
+                        # Extraemos el número original del estampado usando su nombre
+                        original_idx = estampados.index(est_nombre) + 1 if est_nombre in estampados else 1
+                        
+                        title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {original_idx}: {est_nombre}</b>"
+                        if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
+                        title = Paragraph(title_text, t_title)
+                        
+                        num_colors_chunk = len(color_chunk)
+                        if num_colors_chunk <= 6: f_size = 8; pad = 4
+                        elif num_colors_chunk <= 10: f_size = 7.5; pad = 3
+                        else: f_size = 6.5; pad = 1
+                            
+                        style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
+                        w_color = 65; w_talla = 22; espacio_total_tabla = 285 
+                        w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
+                        anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
+                        
+                        data_t = [["COLOR", "", ""] + tallas_usadas]
+                        totales_tallas = {t: 0 for t in tallas_usadas}
+
+                        for c in color_chunk:
+                            row_data = next((r for r in filas_colores if r["color"] == c), None)
+                            if row_data:
+                                r_row = [Paragraph(c, style_color_inv_dyn), "", ""]
+                                for t in tallas_usadas:
+                                    cant = row_data["tallas"].get(t, 0)
+                                    r_row.append(str(cant) if cant > 0 else "")
+                                    totales_tallas[t] += cant
+                                data_t.append(r_row)
+
+                        f_tot = ["TOTAL", "", ""]
+                        for t in tallas_usadas: f_tot.append(str(totales_tallas[t]))
+                        data_t.append(f_tot)
+
+                        t_inv = Table(data_t, colWidths=anchos_columnas)
+                        t_inv.setStyle(TableStyle([
+                            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
+                            ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")), 
+                            ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
+                        ]))
+                        
+                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285])
+                        wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
+                        tablas_estampados.append(wrapper_table)
+
+                    while len(tablas_estampados) < 4: tablas_estampados.append("")
+
+                    grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
+                    t_grid = Table(grid_data, colWidths=[291, 291])
+                    t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                     
-                    data_t = [["COLOR", "", ""] + tallas_usadas]
-                    totales_tallas = {t: 0 for t in tallas_usadas}
-
-                    for c in color_chunk:
-                        row_data = next((r for r in filas_colores if r["color"] == c), None)
-                        if row_data:
-                            r_row = [Paragraph(c, style_color_inv_dyn), "", ""]
-                            for t in tallas_usadas:
-                                cant = row_data["tallas"].get(t, 0)
-                                r_row.append(str(cant) if cant > 0 else "")
-                                totales_tallas[t] += cant
-                            data_t.append(r_row)
-
-                    f_tot = ["TOTAL", "", ""]
-                    for t in tallas_usadas: f_tot.append(str(totales_tallas[t]))
-                    data_t.append(f_tot)
-
-                    t_inv = Table(data_t, colWidths=anchos_columnas)
-                    t_inv.setStyle(TableStyle([
-                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
-                        ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
-                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")), 
-                        ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
-                    ]))
+                    wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=600, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
+                    elementos.append(wrap_t_grid)
                     
-                    wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285])
-                    wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
-                    tablas_estampados.append(wrapper_table)
+                    # 🔥 AHORA SÍ CONTROLAMOS EL SALTO MANUALMENTE Y NO ENVIAMOS FIRMAS AUTOMÁTICAS 🔥
+                    if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_estampados == estampados_por_hoja[-1]):
+                        elementos.append(PageBreak())
 
-                while len(tablas_estampados) < 4: tablas_estampados.append("")
+        if total_ingresado_nube > 0:
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
+                           (modelo, total_ingresado_nube, fecha_txt))
+                           
+        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
+        db.commit()
+        cursor.close()
+        db.close()
 
-                grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
-                t_grid = Table(grid_data, colWidths=[291, 291])
-                t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
-                
-                firmas_data = [
-                    [" ", " "], [" ", " "], [" ", " "],
-                    ["___________________________________", "___________________________________"],
-                    ["DOBLADO", "ALMACÉN"],
-                    ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
-                ]
-                t_firmas = Table(firmas_data, colWidths=[291, 291])
-                t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
-                
-                wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=490, content=[t_grid], mode='shrink', vAlign='TOP')
-                t_master = Table([[t_header_inv], [wrap_t_grid], [t_firmas]], colWidths=[582], rowHeights=[60, 490, 130]) 
-                t_master.setStyle(TableStyle([
-                    ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,2), (0,2), 'BOTTOM'),
-                    ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
-                ]))
-                elementos.append(t_master)
-                
-                # 🔥 ELIMINADO EL SALTO DE LÍNEA EXTRA DEL FINAL 🔥
-                if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1):
-                    elementos.append(PageBreak())
-
+        # 🔥 AQUI SE REMOVIERON LOS CALLBACKS TRAICIONEROS 🔥
         doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
@@ -1452,7 +1470,7 @@ def api_magia_pedido():
         if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
         elementos = []
         estilos = getSampleStyleSheet()
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
@@ -1534,8 +1552,6 @@ def api_magia_pedido():
                 content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], 
                 mode='shrink', vAlign='TOP'
             )
-            elementos.append(t_header_corte)
-            elementos.append(Spacer(1, 10))
             elementos.append(tablas_encogibles)
             elementos.append(PageBreak())
 
@@ -1546,7 +1562,7 @@ def api_magia_pedido():
             for c, l_cant in lienzos.items():
                 for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos_dict.get(t, 0)
 
-        # 3. DIBUJAR INVENTARIOS UNIFICADOS (1 ESTAMPADO POR HOJA)
+        # 3. DIBUJAR INVENTARIOS UNIFICADOS (CHUNKING)
         t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         
         num_est = len(estampados)
@@ -1666,23 +1682,8 @@ def api_magia_pedido():
                 t_grid = Table(grid_data, colWidths=[291, 291])
                 t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                 
-                firmas_data = [
-                    [" ", " "], [" ", " "], [" ", " "],
-                    ["___________________________________", "___________________________________"],
-                    ["DOBLADO", "ALMACÉN"],
-                    ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
-                ]
-                t_firmas = Table(firmas_data, colWidths=[291, 291])
-                t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
-                
-                wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=490, content=[title, Spacer(1,8), t_grid], mode='shrink', vAlign='TOP')
-                t_master = Table([[t_header_inv], [wrap_t_grid], [t_firmas]], colWidths=[582], rowHeights=[60, 490, 130]) 
-                t_master.setStyle(TableStyle([
-                    ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,2), (0,2), 'BOTTOM'),
-                    ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
-                ]))
-                elementos.append(t_master)
+                wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=600, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
+                elementos.append(wrap_t_grid)
                 
                 # 🔥 ELIMINADO EL SALTO DE LÍNEA EXTRA DEL FINAL 🔥
                 if not (i_e == len(estampados) - 1 and chunk_idx == len(color_chunks) - 1):
@@ -1697,6 +1698,7 @@ def api_magia_pedido():
         cursor.close()
         db.close()
 
+        # 🔥 AQUI SE REMOVIERON LOS CALLBACKS TRAICIONEROS 🔥
         doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
