@@ -4,6 +4,7 @@ import io
 import base64
 import json
 import math
+import traceback
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import mysql.connector
@@ -1069,7 +1070,9 @@ def api_magia_madre():
         return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Produccion_{str_folios}.pdf"})
 
     except Exception as e:
-        return jsonify({'error': "Error Servidor PDF: " + str(e)}), 500
+        error_exacto = traceback.format_exc()
+        print("ERROR CRÍTICO:", error_exacto) # Para que también se guarde en los logs de Render
+        return jsonify({'error': f"💥 Falla exacta:\n{error_exacto}"}), 500
 
 @app.route('/api/app/magia_pedido', methods=['POST'])
 def api_magia_pedido():
@@ -1496,7 +1499,9 @@ def api_magia_pedido():
             return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf", 'siguiente_folio': folio_arranque + 1})
 
     except Exception as e:
-        return jsonify({'error': "Error crítico en servidor: " + str(e)}), 500
+        error_exacto = traceback.format_exc()
+        print("ERROR CRÍTICO:", error_exacto) # Para que también se guarde en los logs de Render
+        return jsonify({'error': f"💥 Falla exacta:\n{error_exacto}"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
