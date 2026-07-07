@@ -66,6 +66,47 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
+# 🔥 FUNCIÓN GENERADORA DE CÓDIGOS INDUSTRIALES (SINCRONIZADA CON ESCRITORIO) 🔥
+# ==============================================================================
+def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
+    """
+    Construye códigos EAN-13 estructurales basados en los IDs lógicos de
+    Modelo (5) + Estampado (5) + Color (2) + Talla (1).
+    """
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
+    res_mod = cursor.fetchone()
+    if res_mod and res_mod.get('mod_id') and str(res_mod['mod_id']).isdigit(): 
+        mod_str = str(res_mod['mod_id'])
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 1, 5) AS UNSIGNED)) AS max_mod FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'")
+        res_max_mod = cursor.fetchone()
+        max_m = res_max_mod.get('max_mod') if res_max_mod and res_max_mod.get('max_mod') else 0
+        mod_str = f"{int(max_m) + 1:05d}"
+
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 6, 5) AS est_id FROM inventario WHERE modelo = %s AND estampado = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo, estampado))
+    res_est = cursor.fetchone()
+    if res_est and res_est.get('est_id') and str(res_est['est_id']).isdigit(): 
+        est_str = str(res_est['est_id'])
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 6, 5) AS UNSIGNED)) AS max_est FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'", (modelo,))
+        res_max_est = cursor.fetchone()
+        max_e = res_max_est.get('max_est') if res_max_est and res_max_est.get('max_est') else 0
+        est_str = f"{int(max_e) + 1:05d}"
+
+    cursor.execute("SELECT SUBSTRING(codigo_barras, 11, 2) AS col_id FROM inventario WHERE modelo = %s AND estampado = %s AND color = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo, estampado, color))
+    res_col = cursor.fetchone()
+    if res_col and res_col.get('col_id') and str(res_col['col_id']).isdigit(): 
+        col_str = str(res_col['col_id'])
+    else:
+        cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 11, 2) AS UNSIGNED)) AS max_col FROM inventario WHERE modelo = %s AND estampado = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'", (modelo, estampado))
+        res_max_col = cursor.fetchone()
+        max_c = res_max_col.get('max_col') if res_max_col and res_max_col.get('max_col') else 0
+        col_str = f"{int(max_c) + 1:02d}"
+
+    talla_id = {'CH': 1, 'M': 2, 'G': 3, 'XG': 4, 'EX G': 4, 'T-12': 5, 'T-16': 6, 'EG': 4}.get(talla.upper(), 9)
+    return f"{mod_str}{est_str}{col_str}{talla_id:01d}"
+
+# ==============================================================================
 # HTML WEB (PUENTE LIGERO PARA ESCANEO DE ALMACÉN Y POS)
 # ==============================================================================
 HTML_LOGIN = """
@@ -838,6 +879,7 @@ def api_magia_madre():
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []; estilos = getSampleStyleSheet()
         estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
+        style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
 
         if imagen_blob:
             try:
@@ -853,7 +895,7 @@ def api_magia_madre():
         # 1. DIBUJAR HOJAS DE CORTE
         for particion_folio in folios_a_usar:
             t_header_corte = Table([
-                [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)), 
+                [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", style_header_corte), 
                  Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
                  Paragraph(f"<font color='red'><b>FOLIO:</b> {str_folios}</font>", ParagraphStyle(name='hr', alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12))],
                 [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
@@ -951,7 +993,7 @@ def api_magia_madre():
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
                         
-                        data_t = [["COLOR", "", ""] + tallas_usadas]; totales_tallas = {t: 0 for t in tallas_usadas}
+                        data_tot_inv = [["COLOR", "", ""] + tallas_usadas]; totales_tallas = {t: 0 for t in tallas_usadas}
 
                         for c in color_chunk:
                             row_data = next((r for r in filas_colores if r["color"] == c), None)
@@ -959,13 +1001,13 @@ def api_magia_madre():
                                 r_row = [Paragraph(c, style_color_inv_dyn), "", ""]
                                 for t in tallas_usadas:
                                     cant = row_data["tallas"].get(t, 0); r_row.append(str(cant) if cant > 0 else ""); totales_tallas[t] += cant
-                                data_t.append(r_row)
+                                data_tot_inv.append(r_row)
 
                         f_tot = ["TOTAL", "", ""]
                         for t in tallas_usadas: f_tot.append(str(totales_tallas[t]))
-                        data_t.append(f_tot)
+                        data_tot_inv.append(f_tot)
 
-                        t_inv = Table(data_t, colWidths=anchos_columnas, hAlign='CENTER')
+                        t_inv = Table(data_tot_inv, colWidths=anchos_columnas, hAlign='CENTER')
                         t_inv.setStyle(TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
                             ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
@@ -984,6 +1026,7 @@ def api_magia_madre():
                     t_grid = Table(grid_data, colWidths=[270, 270], hAlign='CENTER')
                     t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                     
+                    # 🔥 3 FILAS VACÍAS PARA EMPUJAR FIRMAS ABAJO (SINCRONIZADO CON PC) 🔥
                     firmas_data = [
                         [" ", " "], [" ", " "], [" ", " "],
                         ["___________________________________", "___________________________________"],
@@ -1192,6 +1235,7 @@ def api_magia_pedido():
             doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
             elementos = []; estilos = getSampleStyleSheet()
             estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
+            style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
 
             if imagen_blob:
                 try:
@@ -1310,7 +1354,7 @@ def api_magia_pedido():
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                         
-                        data_t = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
+                        data_tot = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
                         data_ped = [["COLOR", "", ""] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
                         data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
 
@@ -1371,6 +1415,7 @@ def api_magia_pedido():
                         elementos_hoja.append(tabla_est)
                         elementos_hoja.append(Spacer(1, 15))
 
+                    # 🔥 3 FILAS VACÍAS PARA EMPUJAR FIRMAS ABAJO (SINCRONIZADO CON PC) 🔥
                     firmas_data = [
                         [" ", " "], [" ", " "], [" ", " "],
                         ["___________________________________", "___________________________________"],
