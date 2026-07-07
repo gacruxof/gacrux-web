@@ -28,13 +28,18 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login' 
 
+# 🔥 FUNCIÓN DE SEGURIDAD PARA CAJAS VACÍAS 🔥
+def safe_int(val):
+    try: return int(val)
+    except: return 0
+
 def conectar_bd():
     return mysql.connector.connect(
         host=os.environ.get("DB_HOST", "mysql-292462b-gacrux-of.a.aivencloud.com"),
         user=os.environ.get("DB_USER", "avnadmin"),
         password=os.environ.get("DB_PASSWORD", "AVNS_lJSsblo1fLuMi6cA-yW"), 
         database=os.environ.get("DB_NAME", "defaultdb"),
-        port=int(os.environ.get("DB_PORT", 19257))
+        port=safe_int(os.environ.get("DB_PORT", 19257))
     )
 
 class UsuarioWeb(UserMixin):
@@ -46,22 +51,16 @@ class UsuarioWeb(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    db = None
-    cursor = None
+    db = None; cursor = None
     try:
-        db = conectar_bd()
-        cursor = db.cursor(dictionary=True)
+        db = conectar_bd(); cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE id = %s", (user_id,))
         res = cursor.fetchone()
-        if res: 
-            return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'], res['rol_puesto'])
-    except Exception as e:
-        pass
+        if res: return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'], res['rol_puesto'])
+    except Exception as e: pass
     finally:
-        if cursor: 
-            cursor.close()
-        if db: 
-            db.close()
+        if cursor: cursor.close()
+        if db: db.close()
     return None
 
 # ==============================================================================
@@ -422,7 +421,7 @@ HTML_BASE = """
                 let totalLote = 0;
                 for (let est_k in estructura[mod]) { 
                     estructura[mod][est_k].forEach(p => { 
-                        totalLote += (p.talla_t12||0) + (p.talla_t16||0) + (p.talla_ex_ch||0) + (p.talla_ch||0) + (p.talla_m||0) + (p.talla_g||0) + (p.talla_ex_g||0); 
+                        totalLote += (safe_int(p.talla_t12)) + (safe_int(p.talla_t16)) + (safe_int(p.talla_ex_ch)) + (safe_int(p.talla_ch)) + (safe_int(p.talla_m)) + (safe_int(p.talla_g)) + (safe_int(p.talla_ex_g)); 
                     }); 
                 }
                 
@@ -432,8 +431,8 @@ HTML_BASE = """
                 for (let est in estructura[mod]) {
                     let sT12 = 0, sT16 = 0, sEXCH = 0, sCH = 0, sM = 0, sG = 0, sEXG = 0;
                     estructura[mod][est].forEach(p => { 
-                        sT12 += p.talla_t12 || 0; sT16 += p.talla_t16 || 0; sEXCH += p.talla_ex_ch || 0;
-                        sCH += p.talla_ch || 0; sM += p.talla_m || 0; sG += p.talla_g || 0; sEXG += p.talla_ex_g || 0; 
+                        sT12 += safe_int(p.talla_t12); sT16 += safe_int(p.talla_t16); sEXCH += safe_int(p.talla_ex_ch);
+                        sCH += safe_int(p.talla_ch); sM += safe_int(p.talla_m); sG += safe_int(p.talla_g); sEXG += safe_int(p.talla_ex_g); 
                     });
                     
                     htmlFinal += `<div class="bloque-estampado"><div class="titulo-estampado">${est}</div><table class="tabla-catalogo"><thead><tr><th class="col-color">COLOR</th>
@@ -449,13 +448,13 @@ HTML_BASE = """
                     estructura[mod][est].forEach(p => {
                         let claseEditable = esAdmin ? 'editable' : '';
                         htmlFinal += `<tr><td class="col-color">${p.color.toUpperCase()}</td>
-                                ${sT12 > 0 ? `<td class="${claseEditable} ${(p.talla_t12||0) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_t12')">${p.talla_t12||0}</td>` : ''}
-                                ${sT16 > 0 ? `<td class="${claseEditable} ${(p.talla_t16||0) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_t16')">${p.talla_t16||0}</td>` : ''}
-                                ${sEXCH > 0 ? `<td class="${claseEditable} ${(p.talla_ex_ch||0) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ex_ch')">${p.talla_ex_ch||0}</td>` : ''}
-                                ${sCH > 0 ? `<td class="${claseEditable} ${(p.talla_ch||0) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ch')">${p.talla_ch||0}</td>` : ''}
-                                ${sM > 0 ? `<td class="${claseEditable} ${(p.talla_m||0) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_m')">${p.talla_m||0}</td>` : ''}
-                                ${sG > 0 ? `<td class="${claseEditable} ${(p.talla_g||0) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_g')">${p.talla_g||0}</td>` : ''}
-                                ${sEXG > 0 ? `<td class="${claseEditable} ${(p.talla_ex_g||0) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ex_g')">${p.talla_ex_g||0}</td>` : ''}
+                                ${sT12 > 0 ? `<td class="${claseEditable} ${(safe_int(p.talla_t12)) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_t12')">${safe_int(p.talla_t12)}</td>` : ''}
+                                ${sT16 > 0 ? `<td class="${claseEditable} ${(safe_int(p.talla_t16)) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_t16')">${safe_int(p.talla_t16)}</td>` : ''}
+                                ${sEXCH > 0 ? `<td class="${claseEditable} ${(safe_int(p.talla_ex_ch)) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ex_ch')">${safe_int(p.talla_ex_ch)}</td>` : ''}
+                                ${sCH > 0 ? `<td class="${claseEditable} ${(safe_int(p.talla_ch)) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ch')">${safe_int(p.talla_ch)}</td>` : ''}
+                                ${sM > 0 ? `<td class="${claseEditable} ${(safe_int(p.talla_m)) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_m')">${safe_int(p.talla_m)}</td>` : ''}
+                                ${sG > 0 ? `<td class="${claseEditable} ${(safe_int(p.talla_g)) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_g')">${safe_int(p.talla_g)}</td>` : ''}
+                                ${sEXG > 0 ? `<td class="${claseEditable} ${(safe_int(p.talla_ex_g)) == 0 ? 'stock-cero' : ''}" onclick="activarEdicionCelda(this, ${p.id}, 'talla_ex_g')">${safe_int(p.talla_ex_g)}</td>` : ''}
                                 </tr>`;
                     });
                     
@@ -566,7 +565,7 @@ def api_guardar_stock_web():
     nuevo_valor = data.get('valor')
     
     columnas_permitidas = ['talla_t12', 'talla_t16', 'talla_ex_ch', 'talla_ch', 'talla_m', 'talla_g', 'talla_ex_g', 'talla_eg']
-    if columna_sql not in columnas_permitidas or nuevo_valor < 0: 
+    if columna_sql not in columnas_permitidas or safe_int(nuevo_valor) < 0: 
         return jsonify({'status': 'error', 'msg': 'Parámetros no válidos.'})
         
     db = None; cursor = None
@@ -619,7 +618,7 @@ def api_baja():
                     cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
                     res_stock = cursor.fetchone()
                     if res_stock:
-                        if res_stock[col] <= 0: return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
+                        if safe_int(res_stock[col]) <= 0: return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
                         cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (p_id,))
                         fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         precio_p = float(prenda['precio'])
@@ -646,6 +645,19 @@ def logout():
 # ==============================================================================
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
+
+def dibujar_footer_firmas(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica-Bold", 9)
+    canvas.setFillColor(colors.black)
+    canvas.drawCentredString(150, 50, "___________________________________")
+    canvas.drawCentredString(150, 35, "DOBLADO")
+    canvas.drawCentredString(150, 20, "JACQUELINE TLATELPA XOLALTENCO")
+    canvas.drawCentredString(460, 50, "___________________________________")
+    canvas.drawCentredString(460, 35, "ALMACÉN")
+    canvas.drawCentredString(460, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
+    canvas.restoreState()
+
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
@@ -709,7 +721,7 @@ def api_app_bases():
         if cursor: cursor.close()
         if db: db.close()
 
-# 🔥 SOLUCIÓN DEL CONGELAMIENTO EN RECETAS: Se quito el CREATE TABLE 🔥
+# 🔥 AQUI SE ELIMINO EL CREATE TABLE QUE CAUSABA EL BLOQUEO AL DESCARGAR RECETA 🔥
 @app.route('/api/app/receta/<modelo>', methods=['GET'])
 def api_get_receta(modelo):
     db = None; cursor = None
@@ -757,7 +769,7 @@ def api_descontar():
                     cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
                     res_stock = cursor.fetchone()
                     
-                    if res_stock and res_stock[col] > 0:
+                    if res_stock and safe_int(res_stock[col]) > 0:
                         cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (p_id,))
                         fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         precio_p = float(prenda['precio'])
@@ -833,8 +845,8 @@ def api_subir_lote():
         cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo, estampado, color))
         res = cursor.fetchone()
         
-        ch = tallas.get('CH', 0); m = tallas.get('M', 0); g = tallas.get('G', 0)
-        talla_extra_nombre = tallas.get('EXTRA_NAME', 'EG').upper(); talla_extra_cant = tallas.get('EXTRA_CANT', 0)
+        ch = safe_int(tallas.get('CH', 0)); m = safe_int(tallas.get('M', 0)); g = safe_int(tallas.get('G', 0))
+        talla_extra_nombre = tallas.get('EXTRA_NAME', 'EG').upper(); talla_extra_cant = safe_int(tallas.get('EXTRA_CANT', 0))
         
         if res:
             cursor.execute("""
@@ -959,12 +971,9 @@ def api_migrar_bd():
             cursor.execute("ALTER TABLE inventario ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
             cursor.execute("ALTER TABLE inventario ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
             mensajes.append("✅ Filtros añadidos a inventario.")
-            
         cursor.execute("CREATE TABLE IF NOT EXISTS modelos_base (id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE, genero VARCHAR(50), estilo VARCHAR(50), tipo_prenda VARCHAR(50))")
         cursor.execute("CREATE TABLE IF NOT EXISTS colores_base (id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE)")
-        # 🔥 EL CREATE TABLE DE RECETAS AHORA ESTA AQUI, PROTEGIENDO LA DESCARGA DE BLOQUEOS 🔥
         cursor.execute("CREATE TABLE IF NOT EXISTS recetas_madre (modelo VARCHAR(100) PRIMARY KEY, folio INT DEFAULT 1, colores TEXT, cuerpos TEXT, cuerpos_ids TEXT)")
-        
         mensajes.append("✅ Tablas de Autocompletado Creadas.")
         db.commit()
         return f"<h1>Migración Gacrux Completada</h1><p>{'<br>'.join(mensajes)}</p>"
@@ -977,7 +986,7 @@ def api_migrar_bd():
 
 
 # ==============================================================================
-# 🔥 MOTOR DE HOJA MADRE MÓVIL BLINDADO CONTRA CUALQUIER EXCEPCIÓN 🔥
+# 🔥 MOTOR DE HOJA MADRE MÓVIL BLINDADO Y OPTIMIZADO 🔥
 # ==============================================================================
 @app.route('/api/app/magia_madre', methods=['POST'])
 def api_magia_madre():
@@ -1037,10 +1046,10 @@ def api_magia_madre():
                 cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
 
             for c in colores:
-                lienzos = int(datos_lienzo_color.get(c, 0))
+                lienzos = safe_int(datos_lienzo_color.get(c, 0))
                 fila = {"color": c, "lienzos": lienzos, "totales_talla": {t: 0 for t in tallas_usadas}, "gran_total": 0}
                 for t in tallas_usadas: 
-                    prendas = lienzos * int(cuerpos_actuales.get(t, 0))
+                    prendas = lienzos * safe_int(cuerpos_actuales.get(t, 0))
                     fila["totales_talla"][t] = prendas
                     fila["gran_total"] += prendas
                 datos_corte.append(fila)
@@ -1048,14 +1057,12 @@ def api_magia_madre():
             datos_corte.sort(key=lambda x: x["gran_total"], reverse=True)
             num_folios = len(folios_a_usar)
             
-            # 🔥 LÓGICA DE ESTAMPADOS: RESPETA EL ORDEN DE LA APP Y LOS ESPACIOS VACÍOS 🔥
             est_por_folio_raw = [raw_estampados[i:i + estampados_por_folio] for i in range(0, len(raw_estampados), estampados_por_folio)]
             est_por_folio = []
             estampados = []
             for chunk in est_por_folio_raw:
                 clean_chunk = [e for e in chunk if e.strip()]
-                if not clean_chunk:
-                    clean_chunk = ["SIN ESTAMPADO"]
+                if not clean_chunk: clean_chunk = ["SIN ESTAMPADO"]
                 est_por_folio.append(clean_chunk)
                 estampados.extend(clean_chunk)
                 
@@ -1154,7 +1161,7 @@ def api_magia_madre():
             if cursor: cursor.close()
             if db: db.close()
 
-        # 🔥 BLOQUE DE CONSTRUCCIÓN DEL PDF 🔥
+        # 🔥 COMPRESOR DE RAM + DIBUJO DE PDF 🔥
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []
@@ -1162,86 +1169,96 @@ def api_magia_madre():
         estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
 
         if imagen_blob:
-            b_io = io.BytesIO(imagen_blob)
-            w_img = 220 if "2500" in formato_img else 130
-            logo = RLImage(b_io, width=w_img, height=130, kind='proportional')
+            try:
+                img = PILImage.open(io.BytesIO(imagen_blob))
+                if img.mode != 'RGB': img = img.convert('RGB')
+                img.thumbnail((400, 400)) # COMPRESIÓN DE RAM AL 90%
+                temp_io = io.BytesIO()
+                img.save(temp_io, format='JPEG', quality=80)
+                temp_io.seek(0)
+                w_img = 220 if "2500" in formato_img else 130
+                logo = RLImage(temp_io, width=w_img, height=130, kind='proportional')
+            except: logo = ""
         else: logo = ""
-        
-        t_header_corte = Table([
-            [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", estilos['Normal']), 
-             Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
-             Paragraph(f"<font color='red'><b>FOLIO:</b> {str_folios}</font>", ParagraphStyle(name='hr', alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12))],
-            [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
-        ], colWidths=[185, 185, 185], rowHeights=[20, 135], hAlign='CENTER') 
-        t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
-        
-        elementos.append(t_header_corte)
-        elementos.append(Spacer(1, 10)) 
 
-        tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
-        data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
-        
-        for c_dict in cuerpos_del_modelo:
-            nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
-            if 'x2' in tipo_mult: txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
-            elif 'A/B' in tipo_mult: txt_cant = "L-A | L-B"; f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
-            else: txt_cant = "1"; f_calc = lambda c: str(c) if c > 0 else ""
+        folio_actual = folio_arranque 
 
-            fila = [Paragraph(nombre_p, estilo_wrap), txt_cant]
-            for t in tallas_todas: fila.append(f_calc(int(cuerpos_actuales.get(t, 0))))
-            data_t1.append(fila)
+        # 1. DIBUJAR HOJAS DE CORTE
+        for particion in particiones:
+            grupo_tallas, cuerpos, lienzos = particion
+            
+            t_header_corte = Table([
+                [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", estilos['Normal']), 
+                 Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
+                 Paragraph(f"<font color='red'><b>FOLIO:</b> {str_folios}</font>", ParagraphStyle(name='hr', alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12))],
+                [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
+            ], colWidths=[185, 185, 185], rowHeights=[20, 135])
+            t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
+            
+            elementos.append(t_header_corte); elementos.append(Spacer(1, 10))
+            tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
+            data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
+            
+            for c_dict in cuerpos_del_modelo:
+                nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
+                if 'x2' in tipo_mult: txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
+                elif 'A/B' in tipo_mult: txt_cant = "L-A | L-B"; f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
+                else: txt_cant = "1"; f_calc = lambda c: str(c) if c > 0 else ""
 
-        # 🔥 AÑADIDA LA INSTRUCCIÓN hAlign='CENTER' A TODAS LAS TABLAS 🔥
-        t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60], hAlign='CENTER')
-        t1.setStyle(TableStyle([
-            ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
-            ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,1), 'Helvetica-Bold'),
-            ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
-        ]))
+                fila = [Paragraph(nombre_p, estilo_wrap), txt_cant]
+                for t in tallas_todas: fila.append(f_calc(safe_int(cuerpos_actuales.get(t, 0))))
+                data_t1.append(fila)
 
-        data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
-        marcados = []; current_marcado = []; current_sum = 0
-        for d in datos_corte:
-            if current_sum + d["lienzos"] > 80 and current_sum > 0:
-                marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
-            else: current_marcado.append(d); current_sum += d["lienzos"]
-        if current_marcado: marcados.append(current_marcado)
+            t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60], hAlign='CENTER')
+            t1.setStyle(TableStyle([
+                ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
+                ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#fef3c7")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,1), 'Helvetica-Bold'),
+                ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+            ]))
 
-        suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; row_idx = 1
-        estilos_tabla2 = [
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
-        ]
-        for num_m, marcado_data in enumerate(marcados):
-            start_row = row_idx
-            for i, d in enumerate(marcado_data):
-                fila = [f"Marcado\n{num_m + 1}" if i == 0 else "", Paragraph(d["color"], estilo_wrap), str(d["lienzos"])]
-                suma_lienzos += d["lienzos"]
-                for t in tallas_todas:
-                    val = d["totales_talla"].get(t, 0); fila.append(str(val) if val > 0 else ""); suma_tallas[t] += val
-                fila.append(str(d["gran_total"])); gran_total += d["gran_total"]; data_t2.append(fila); row_idx += 1
-            if len(marcado_data) > 1: estilos_tabla2.append(('SPAN', (0, start_row), (0, row_idx - 1)))
+            data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
+            marcados = []; current_marcado = []; current_sum = 0
+            for d in datos_corte:
+                if current_sum + d["lienzos"] > 80 and current_sum > 0:
+                    marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
+                else: current_marcado.append(d); current_sum += d["lienzos"]
+            if current_marcado: marcados.append(current_marcado)
 
-        fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
-        for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
-        fila_final.append(str(gran_total)); data_t2.append(fila_final)
-        estilos_tabla2.extend([
-            ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
-            ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
-        ])
-        t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45], hAlign='CENTER')
-        t2.setStyle(TableStyle(estilos_tabla2))
+            suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; row_idx = 1
+            estilos_tabla2 = [
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+            ]
+            for num_m, marcado_data in enumerate(marcados):
+                start_row = row_idx
+                for i, d in enumerate(marcado_data):
+                    fila = [f"Marcado\n{num_m + 1}" if i == 0 else "", Paragraph(d["color"], estilo_wrap), str(d["lienzos"])]
+                    suma_lienzos += d["lienzos"]
+                    for t in tallas_todas:
+                        val = d["totales_talla"].get(t, 0); fila.append(str(val) if val > 0 else ""); suma_tallas[t] += val
+                    fila.append(str(d["gran_total"])); gran_total += d["gran_total"]; data_t2.append(fila); row_idx += 1
+                if len(marcado_data) > 1: estilos_tabla2.append(('SPAN', (0, start_row), (0, row_idx - 1)))
 
-        tablas_encogibles = KeepInFrame(
-            maxWidth=540, maxHeight=500, 
-            content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], 
-            mode='shrink', vAlign='TOP'
-        )
-        elementos.append(tablas_encogibles); elementos.append(PageBreak())
+            fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
+            for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
+            fila_final.append(str(gran_total)); data_t2.append(fila_final)
+            estilos_tabla2.extend([
+                ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
+                ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
+            ])
+            t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45], hAlign='CENTER')
+            t2.setStyle(TableStyle(estilos_tabla2))
 
-        # 🔥 INVENTARIOS UNIFICADOS (TAMAÑO COMPACTO Y CENTRADOS) 🔥
+            tablas_encogibles = KeepInFrame(
+                maxWidth=540, maxHeight=500, 
+                content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], 
+                mode='shrink', vAlign='TOP'
+            )
+            elementos.append(tablas_encogibles); elementos.append(PageBreak())
+
+        # 3. DIBUJAR INVENTARIOS UNIFICADOS
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         MAX_COLORS = 10
         color_chunks = [colores[i:i + MAX_COLORS] for i in range(0, len(colores), MAX_COLORS)]
@@ -1257,7 +1274,7 @@ def api_magia_madre():
                     t_header_inv = Table([
                         [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
                          Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-                    ], colWidths=[270, 270], hAlign='CENTER') # 🔥 REDUCIDO Y CENTRADO
+                    ], colWidths=[270, 270], hAlign='CENTER')
 
                     tablas_estampados = []
                     for est_item in lote_estampados:
@@ -1290,7 +1307,7 @@ def api_magia_madre():
                         for t in tallas_usadas: f_tot.append(str(totales_tallas[t]))
                         data_t.append(f_tot)
 
-                        t_inv = Table(data_t, colWidths=anchos_columnas, hAlign='CENTER') # 🔥 CENTRADO
+                        t_inv = Table(data_t, colWidths=anchos_columnas, hAlign='CENTER')
                         t_inv.setStyle(TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
                             ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
@@ -1299,14 +1316,14 @@ def api_magia_madre():
                             ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                         ]))
                         
-                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[260], hAlign='CENTER') # 🔥 CENTRADO
+                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[260], hAlign='CENTER')
                         wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
                         tablas_estampados.append(wrapper_table)
 
                     while len(tablas_estampados) < 4: tablas_estampados.append("")
 
                     grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
-                    t_grid = Table(grid_data, colWidths=[270, 270], hAlign='CENTER') # 🔥 CENTRADO Y REDUCIDO
+                    t_grid = Table(grid_data, colWidths=[270, 270], hAlign='CENTER')
                     t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                     
                     firmas_data = [
@@ -1319,7 +1336,7 @@ def api_magia_madre():
                     t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
                     
                     wrap_t_grid = KeepInFrame(maxWidth=540, maxHeight=490, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
-                    t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[540], rowHeights=[550, 110], hAlign='CENTER') # 🔥 CENTRADO EN LA HOJA
+                    t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[540], rowHeights=[550, 110], hAlign='CENTER') 
                     t_master.setStyle(TableStyle([
                         ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,1), (0,1), 'BOTTOM'),
                         ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
@@ -1331,15 +1348,14 @@ def api_magia_madre():
                     if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_idx == len(estampados_por_hoja) - 1):
                         elementos.append(PageBreak())
 
-        # 🔥 AQUI SE ELIMINO LA FUNCION FANTASMA QUE DUPLICABA LAS FIRMAS 🔥
-        doc.build(elementos)
+        doc.build(elementos) # FIRMAS EXCLUSIVAS DEL INVENTARIO
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
         return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Produccion_{str_folios}.pdf"})
 
     except Exception as e:
-        return jsonify({'error': "Fallo generacion PDF: " + str(e)}), 500
+        return jsonify({'error': "Error de Servidor PDF: " + str(e)}), 500
 
 
 @app.route('/api/app/magia_pedido', methods=['POST'])
@@ -1355,7 +1371,7 @@ def api_magia_pedido():
         estampados_por_folio = int(req.get('estampados_por_folio', 4))
         
         pedidos_app = req.get('pedidos', {}) 
-        folio_arranque = int(req.get('folio_arranque', 1))
+        folio_arranque = safe_int(req.get('folio_arranque', 1))
         
         fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
 
@@ -1373,7 +1389,7 @@ def api_magia_pedido():
             colores_activos = set()
             for c, t_data in pedidos_app.items():
                 for t, cant in t_data.items():
-                    if cant > 0: 
+                    if safe_int(cant) > 0: 
                         tallas_activas.add(t)
                         colores_activos.add(c)
             tallas_activas = list(tallas_activas)
@@ -1381,7 +1397,7 @@ def api_magia_pedido():
             orden_tallas = {"T-12":1, "T-16":2, "EX CH":3, "CH":4, "M":5, "G":6, "EX G":7}
             tallas_activas.sort(key=lambda x: orden_tallas.get(x, 99))
 
-            def total_pedido_grupo(grupo): return sum(t_data.get(t, 0) for c, t_data in pedidos_app.items() for t in grupo)
+            def total_pedido_grupo(grupo): return sum(safe_int(t_data.get(t, 0)) for c, t_data in pedidos_app.items() for t in grupo)
 
             def calcular_desperdicio(grupo_tallas):
                 best_waste = float('inf'); best_lienzos_total = float('inf'); best_cuerpos = {}; best_lienzos_color = {}
@@ -1396,9 +1412,9 @@ def api_magia_pedido():
                     cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
                     lienzos_color = {}; waste = 0; tot_l = 0
                     for c, peds in pedidos_app.items():
-                        req_lienzos = max((math.ceil(peds.get(t, 0) / cuerpos[t]) for t in grupo_tallas if peds.get(t, 0) > 0), default=0)
+                        req_lienzos = max((math.ceil(safe_int(peds.get(t, 0)) / cuerpos[t]) for t in grupo_tallas if safe_int(peds.get(t, 0)) > 0), default=0)
                         lienzos_color[c] = req_lienzos; tot_l += req_lienzos
-                        for t in grupo_tallas: waste += (req_lienzos * cuerpos[t]) - peds.get(t, 0)
+                        for t in grupo_tallas: waste += (req_lienzos * cuerpos[t]) - safe_int(peds.get(t, 0))
                     if tot_l < best_lienzos_total or (tot_l == best_lienzos_total and waste < best_waste):
                         best_lienzos_total = tot_l; best_waste = waste; best_cuerpos = cuerpos; best_lienzos_color = lienzos_color
                 return best_waste, best_lienzos_total, best_cuerpos, best_lienzos_color
@@ -1466,9 +1482,9 @@ def api_magia_pedido():
             estampados = []
             for chunk in est_por_folio_raw:
                 clean_chunk = [e for e in chunk if e.strip()]
-                if clean_chunk:
-                    est_por_folio.append(clean_chunk)
-                    estampados.extend(clean_chunk)
+                if not clean_chunk: clean_chunk = ["SIN ESTAMPADO"]
+                est_por_folio.append(clean_chunk)
+                estampados.extend(clean_chunk)
                     
             if not estampados:
                 estampados = ["SIN ESTAMPADO"]
@@ -1482,7 +1498,7 @@ def api_magia_pedido():
                 for c in colores_activos:
                     for t in tallas_activas:
                         prod = total_prod[c][t]
-                        ped = pedidos_app.get(c, {}).get(t, 0)
+                        ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
                         
                         base_prod = prod // num_est
                         sobra_prod = prod % num_est
@@ -1540,7 +1556,7 @@ def api_magia_pedido():
             if cursor: cursor.close()
             if db: db.close()
 
-        # 🔥 BLOQUE DE PDF 🔥
+        # 🔥 BLOQUE DE PDF (CERO CONGELAMIENTOS) 🔥
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []
@@ -1549,11 +1565,17 @@ def api_magia_pedido():
         estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
 
         if imagen_blob:
-            b_io = io.BytesIO(imagen_blob)
-            w_img = 220 if "2500" in formato_img else 130
-            logo = RLImage(b_io, width=w_img, height=130, kind='proportional')
-        else: 
-            logo = ""
+            try:
+                img = PILImage.open(io.BytesIO(imagen_blob))
+                if img.mode != 'RGB': img = img.convert('RGB')
+                img.thumbnail((350, 350)) # 🔥 COMPRESION PARA AHORRAR RAM 🔥
+                temp_io = io.BytesIO()
+                img.save(temp_io, format='JPEG', quality=85)
+                temp_io.seek(0)
+                w_img = 220 if "2500" in formato_img else 130
+                logo = RLImage(temp_io, width=w_img, height=130, kind='proportional')
+            except: logo = ""
+        else: logo = ""
 
         folio_actual = folio_arranque 
 
@@ -1648,6 +1670,7 @@ def api_magia_pedido():
         MAX_COLORS = 10
         color_chunks = [colores_activos[i:i + MAX_COLORS] for i in range(0, len(colores_activos), MAX_COLORS)]
 
+        # 🔥 DIVISIÓN ESTRICTA PARA LA IMPRESIÓN (RESPETA LA UI Y LOS ESPACIOS VACÍOS) 🔥
         for lote_idx, lote_estampados in enumerate(est_por_folio):
             for chunk_idx, color_chunk in enumerate(color_chunks):
                 
@@ -1678,11 +1701,13 @@ def api_magia_pedido():
                     data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
                     
                     for c in color_chunk:
-                        r_tot = [Paragraph(c, style_color_inv), "", ""]; r_ped = [Paragraph(c, style_color_inv), "", ""]; r_sob = [Paragraph(c, style_color_inv), "", ""]
+                        r_tot = [Paragraph(c, style_color_inv), "", ""]
+                        r_ped = [Paragraph(c, style_color_inv), "", ""]
+                        r_sob = [Paragraph(c, style_color_inv), "", ""]
                         
                         for t in tallas_activas:
                             prod = total_prod[c][t]
-                            ped = pedidos_app.get(c, {}).get(t, 0)
+                            ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
                             
                             base_prod = prod // num_est
                             sobra_prod = prod % num_est
@@ -1760,15 +1785,14 @@ def api_magia_pedido():
                 if not (lote_idx == len(est_por_folio) - 1 and chunk_idx == len(color_chunks) - 1):
                     elementos.append(PageBreak())
 
-        # 🔥 AQUI SE ELIMINO LA FUNCION FANTASMA QUE DUPLICABA LAS FIRMAS 🔥
-        doc.build(elementos)
+        doc.build(elementos) # 🔥 SIN CALLBACK FANTASMA 🔥
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
         return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf", 'siguiente_folio': folio_arranque + 1})
 
     except Exception as e:
-        return jsonify({'error': "Fallo generacion PDF: " + str(e)}), 500
+        return jsonify({'error': "Error Servidor PDF: " + str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
