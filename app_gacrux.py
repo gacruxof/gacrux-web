@@ -752,6 +752,11 @@ def api_app_bases():
     finally:
         if cursor: cursor.close()
         if db: db.close()
+            
+@app.route('/api/ping', methods=['GET'])
+def api_ping():
+    # 🔥 DESPERTADOR: Mantiene a Render despierto sin usar la Base de Datos 🔥
+    return jsonify({'status': 'despierto'})
 
 @app.route('/api/app/receta/<modelo>', methods=['GET'])
 def api_get_receta(modelo):
