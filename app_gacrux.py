@@ -1163,11 +1163,11 @@ def api_magia_pedido():
         def particionar_tallas(grupo):
             n = len(grupo)
             if n <= 3:
-                # 1 a 3 tallas: Obliga a buscar la mejor combinación en 1 sola hoja.
+                # 1 a 3 tallas: Busca combinaciones para que entren en 1 sola hoja.
                 w, tl, c, l = calcular_desperdicio(grupo)
                 return [(grupo, c, l)]
             elif n == 4:
-                # 4 tallas: Intenta en 1 hoja. Si el desperdicio supera el 50%, parte en 2 y 2.
+                # 4 tallas: Intenta en 1 hoja. Si el sobrante supera el 50%, parte en 2 y 2 (juntando las más similares).
                 w1, tl1, c1, l1 = calcular_desperdicio(grupo)
                 tot_ped = total_pedido_grupo(grupo)
                 if tot_ped > 0 and w1 <= (tot_ped * 0.50):
@@ -1175,10 +1175,10 @@ def api_magia_pedido():
                 else:
                     return particionar_tallas(grupo[:2]) + particionar_tallas(grupo[2:])
             elif n == 5:
-                # 5 tallas: Siempre parte en 3 y 2.
+                # 5 tallas: Siempre fuerza la división en 3 y 2.
                 return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:])
             else:
-                # 6+ tallas: Parte a la mitad (3/3 o 3/4...)
+                # 6+ tallas: Parte a la mitad (ej. 3 y 3)
                 mid = n // 2
                 return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
 
@@ -1387,7 +1387,6 @@ def api_magia_pedido():
 
                     tablas_estampados = []
                     for i_e, est_item in enumerate(lote_estampados):
-                        # 🔥 FIX DUPLICACIÓN ESTAMPADOS: USA EL ÍNDICE REAL, NO EL BUSCADOR TEXTUAL 🔥
                         original_idx = lote_idx * estampados_por_folio + i_e
                         title_text = f"<font color='#d97706'>▐</font> <b>ESTAMPADO {original_idx + 1}: {est_item}</b>"
                         if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
@@ -1399,7 +1398,7 @@ def api_magia_pedido():
                         else: f_size = 6.5; pad = 1
                             
                         style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                        w_color = 65; w_talla = 20; espacio_total_tabla = 285 
+                        w_color = 65; w_talla = 20; espacio_total_tabla = 291 
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                         
@@ -1452,13 +1451,15 @@ def api_magia_pedido():
                         wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]], hAlign='CENTER')
                         wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]], hAlign='CENTER')
 
-                        tablas_estampados.append(Table([[wrap_tot, wrap_ped], [Spacer(1, 15), Spacer(1, 15)], [wrap_sob, ""]], colWidths=[285, 285], style=[('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)], hAlign='CENTER'))
+                        # AQUÍ SE CREA LA TABLA DE 582 PUNTOS DE ANCHO
+                        tablas_estampados.append(Table([[wrap_tot, wrap_ped], [Spacer(1, 15), Spacer(1, 15)], [wrap_sob, ""]], colWidths=[291, 291], style=[('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)], hAlign='CENTER'))
                         tablas_estampados.append(title)
 
+                    # 🔥 FIX DEL ERROR 500: SE APILAN VERTICALMENTE EN LUGAR DE USAR T_GRID 🔥
                     elementos_hoja = [t_header_inv, Spacer(1, 15)]
                     for i in range(0, len(tablas_estampados), 2):
-                        titulo_est = tablas_estampados[i+1]
-                        tabla_est = tablas_estampados[i]
+                        tabla_est = tablas_estampados[i]     
+                        titulo_est = tablas_estampados[i+1]  
                         elementos_hoja.append(titulo_est)
                         elementos_hoja.append(Spacer(1, 8))
                         elementos_hoja.append(tabla_est)
