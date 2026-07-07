@@ -39,7 +39,9 @@ def conectar_bd():
         user=os.environ.get("DB_USER", "avnadmin"),
         password=os.environ.get("DB_PASSWORD", "AVNS_lJSsblo1fLuMi6cA-yW"), 
         database=os.environ.get("DB_NAME", "defaultdb"),
-        port=safe_int(os.environ.get("DB_PORT", 19257))
+        port=19257,
+        connect_timeout=5,      # 🔥 Si Aiven lo ignora, Render cancela en 5 segundos, ya no en 2 minutos.
+        ssl_disabled=False      # 🔥 Fuerza el uso de seguridad SSL que Aiven exige.
     )
 
 class UsuarioWeb(UserMixin):
