@@ -891,12 +891,14 @@ def api_magia_madre():
                 img.save(temp_io, format='PNG')
                 temp_io_bytes = temp_io.getvalue()
                 w_img = 220 if "2500" in formato_img else 130
-            except Exception as e:
+            except:
                 temp_io_bytes = None
         else: temp_io_bytes = None
 
         # 1. DIBUJAR HOJAS DE CORTE
-        if temp_io_bytes: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
+        if temp_io_bytes: 
+            try: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
+            except: logo = ""
         else: logo = ""
 
         t_header_corte = Table([
@@ -1055,6 +1057,9 @@ def api_magia_madre():
                     elementos.append(t_master)
                     if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_idx == len(estampados_por_hoja) - 1):
                         elementos.append(PageBreak())
+        
+        if not elementos:
+            elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
 
         doc.build(elementos) 
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
@@ -1091,17 +1096,24 @@ def api_magia_pedido():
         def total_pedido_grupo(grupo): 
             return sum(safe_int(t_data.get(t, 0)) for c, t_data in pedidos_app.items() for t in grupo)
 
+        # 🔥 LA NUEVA IA: CREA COMBINACIONES 100% SEGURAS (LÍMITE EXACTO DE 6 CUERPOS) 🔥
+        def get_combos(n):
+            combos = []
+            def search(path, current_sum):
+                if len(path) == n:
+                    combos.append(path)
+                    return
+                for i in range(1, 7 - current_sum - (n - 1 - len(path)) + 1):
+                    search(path + [i], current_sum + i)
+            search([], 0)
+            return combos
+
         def calcular_desperdicio(grupo_tallas):
             best_waste = float('inf'); best_lienzos_total = float('inf'); best_cuerpos = {}; best_lienzos_color = {}
-            def get_combos(n, current_sum=0):
-                if n == 1: return [[i] for i in range(1, 7 - current_sum)]
-                combos = []
-                for i in range(1, 7 - current_sum - (n-1) + 1):
-                    for rest in get_combos(n-1, current_sum + i): combos.append([i] + rest)
-                return combos
             
             combos = get_combos(len(grupo_tallas))
-            if not combos: return float('inf'), float('inf'), {}, {}
+            if not combos: 
+                return float('inf'), float('inf'), {}, {}
             
             for combo in combos:
                 cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
@@ -1110,26 +1122,34 @@ def api_magia_pedido():
                     req_lienzos = max((math.ceil(safe_int(peds.get(t, 0)) / cuerpos[t]) for t in grupo_tallas if safe_int(peds.get(t, 0)) > 0), default=0)
                     lienzos_color[c] = req_lienzos; tot_l += req_lienzos
                     for t in grupo_tallas: waste += (req_lienzos * cuerpos[t]) - safe_int(peds.get(t, 0))
+                
                 if tot_l < best_lienzos_total or (tot_l == best_lienzos_total and waste < best_waste):
                     best_lienzos_total = tot_l; best_waste = waste; best_cuerpos = cuerpos; best_lienzos_color = lienzos_color
             return best_waste, best_lienzos_total, best_cuerpos, best_lienzos_color
 
-        # 🔥 LA NUEVA IA: EVALÚA, DECIDE Y PARTE TALLAS AUTOMÁTICAMENTE 🔥
+        # 🔥 LA NUEVA IA: DECIDE CÓMO PARTIR LAS TALLAS EN HOJAS DE CORTE 🔥
         def particionar_tallas(grupo):
-            if len(grupo) <= 2:
+            n = len(grupo)
+            if n <= 3:
+                # Intenta agrupar hasta 3 tallas juntas en una hoja siempre.
                 w, tl, c, l = calcular_desperdicio(grupo)
                 return [(grupo, c, l)]
-            
-            if len(grupo) <= 6:
-                w, tl, c, l = calcular_desperdicio(grupo)
+            elif n == 4:
+                # 4 tallas: Si se puede en una hoja lo hace. Si hay mucho desperdicio, parte 2/2 juntando parecidas.
+                w1, tl1, c1, l1 = calcular_desperdicio(grupo)
                 tot_ped = total_pedido_grupo(grupo)
-                # Si el desperdicio es aceptable o son poquitas prendas, no divide
-                if tot_ped <= 30 or w <= (tot_ped * 0.50):
-                    return [(grupo, c, l)]
-            
-            # Si excede el 50% de desperdicio o son más de 6 tallas, se parte a la mitad inteligentemente
-            mid = len(grupo) // 2
-            return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
+                if w1 <= (tot_ped * 0.50):
+                    return [(grupo, c1, l1)]
+                else:
+                    return particionar_tallas(grupo[:2]) + particionar_tallas(grupo[2:])
+            elif n == 5:
+                # 5 tallas: Siempre las parte en 3 y 2.
+                return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:])
+            elif n == 6:
+                # 6 tallas: Siempre las parte en 3 y 3.
+                return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:])
+            else: # 7 tallas
+                return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:5]) + particionar_tallas(grupo[5:])
 
         particiones = particionar_tallas(tallas_activas)
 
@@ -1164,6 +1184,7 @@ def api_magia_pedido():
                             ped_est = base_ped + 1 if i_e < sobra_ped else base_ped
                             sob_est = max(0, prod_est - ped_est)
                             
+                            # SOLAMENTE LOS SOBRANTES SE VAN A LA NUBE:
                             if sob_est > 0:
                                 modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" 
                                 col_sql = mapa_bd.get(t, "talla_ex_g")
@@ -1264,8 +1285,10 @@ def api_magia_pedido():
             for particion in particiones:
                 grupo_tallas, cuerpos, lienzos = particion
                 
-                # RECREAR LA IMAGEN EN CADA HOJA DE CORTE PARA EVITAR COLAPSO DE REPORTLAB
-                if temp_io_bytes: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
+                # LA IMAGEN SE RECREA DE FORMA SEGURA EN CADA HOJA (NO COLAPSA)
+                if temp_io_bytes: 
+                    try: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
+                    except: logo = ""
                 else: logo = ""
 
                 t_header_corte = Table([
@@ -1460,6 +1483,9 @@ def api_magia_pedido():
                     elementos.append(t_master)
                     if not (lote_idx == len(est_por_folio) - 1 and chunk_idx == len(color_chunks) - 1):
                         elementos.append(PageBreak())
+            
+            if not elementos:
+                elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
 
             doc.build(elementos) 
             pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
