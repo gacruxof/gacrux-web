@@ -47,7 +47,8 @@ class UsuarioWeb(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        db = conectar_bd(); cursor = db.cursor(dictionary=True)
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE id = %s", (user_id,))
         res = cursor.fetchone()
         cursor.close(); db.close()
@@ -56,7 +57,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# HTML WEB (7 TALLAS)
+# HTML WEB (SE MANTIENE INTACTO)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -805,7 +806,7 @@ def api_app_bases():
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT id, nombre, genero, estilo, tipo_prenda, formato_img FROM modelos_base ORDER BY nombre ASC")
+        cursor.execute("SELECT id, nombre FROM modelos_base ORDER BY nombre ASC")
         modelos = cursor.fetchall()
         cursor.execute("SELECT id, nombre FROM colores_base ORDER BY nombre ASC")
         colores = cursor.fetchall()
@@ -1032,7 +1033,7 @@ def api_magia_madre():
     
     req = request.get_json()
     modelo = req.get('modelo', '').strip().upper()
-    estampados = req.get('estampados', [])
+    estampados = [e for e in req.get('estampados', []) if e.strip()]
     colores = req.get('colores', [])
     cuerpos_actuales = req.get('cuerpos_actuales', {})
     tallas_usadas = req.get('tallas_usadas', [])
@@ -1080,18 +1081,26 @@ def api_magia_madre():
         datos_corte.sort(key=lambda x: x["gran_total"], reverse=True)
 
         num_folios = len(folios_a_usar)
-        est_por_folio = [estampados[i:i + 4] for i in range(0, len(estampados), 4)]
-        datos_inventario_global = []
+        
+        # 🔥 DISTRIBUCIÓN MATEMÁTICA EQUITATIVA (Evita blancos y errores de división) 🔥
+        chunk_size = math.ceil(len(estampados) / num_folios) if num_folios > 0 and len(estampados) > 0 else 1
+        est_por_folio = [estampados[i:i + chunk_size] for i in range(0, len(estampados), chunk_size)]
+        while len(est_por_folio) < num_folios:
+            est_por_folio.append([])
 
+        datos_inventario_global = []
         total_ingresado_nube = 0
-        mapa_bd = {
-            "T-12": "talla_t12", "T-16": "talla_t16", "EX CH": "talla_ex_ch",
-            "CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX G": "talla_ex_g"
-        }
+        current_global_idx = 1
+        mapa_bd = {"T-12": "talla_t12", "T-16": "talla_t16", "EX CH": "talla_ex_ch", "CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX G": "talla_ex_g"}
 
         for i_f, folio_actual in enumerate(folios_a_usar):
-            estampados_del_folio = est_por_folio[i_f] if i_f < len(est_por_folio) else []
-            estampados_data = [{"nombre": est, "filas": []} for est in estampados_del_folio]
+            estampados_del_folio = est_por_folio[i_f]
+            estampados_data = []
+            
+            for est_name in estampados_del_folio:
+                estampados_data.append({"nombre": est_name, "filas": [], "global_idx": current_global_idx})
+                current_global_idx += 1
+                
             modelo_folio_nube = f"{modelo} {str(folio_actual).zfill(2)}"
             
             for fila_corte in datos_corte:
@@ -1100,11 +1109,14 @@ def api_magia_madre():
                 for t in tallas_usadas:
                     total_corte = fila_corte["totales_talla"][t]
                     total_folio = total_corte // num_folios
-                    base = total_folio // 4
-                    sobra = total_folio % 4
-                    for i_e in range(4):
-                        asignado = base + 1 if i_e < sobra else base
-                        reparto_por_talla[t].append(asignado)
+                    
+                    num_est_folio = len(estampados_data)
+                    if num_est_folio > 0:
+                        base = total_folio // num_est_folio
+                        sobra = total_folio % num_est_folio
+                        for i_e in range(num_est_folio):
+                            asignado = base + 1 if i_e < sobra else base
+                            reparto_por_talla[t].append(asignado)
 
                 for i_e, est_dict in enumerate(estampados_data):
                     fila_inv = {"color": c, "tallas": {}}
@@ -1153,7 +1165,7 @@ def api_magia_madre():
                                                (cod, modelo_folio_nube, est_nombre, c, t, panel_id))
                                                
         if total_ingresado_nube > 0:
-            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'HOJA MADRE APP', 'SISTEMA')", 
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE', 'SISTEMA')", 
                            (modelo, total_ingresado_nube, fecha_txt))
 
         siguiente_folio = folios_a_usar[-1] + 1
@@ -1270,8 +1282,10 @@ def api_magia_madre():
 
             for chunk_idx, color_chunk in enumerate(color_chunks):
                 estampados_por_hoja = [estampados_data[i:i + 4] for i in range(0, len(estampados_data), 4)]
+                if not estampados_por_hoja:
+                    estampados_por_hoja = [[]]
                 
-                for lote_estampados in estampados_por_hoja:
+                for lote_idx, lote_estampados in enumerate(estampados_por_hoja):
                     t_header_inv = Table([
                         [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
                          Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
@@ -1279,11 +1293,9 @@ def api_magia_madre():
 
                     tablas_estampados = []
                     for est_item in lote_estampados:
-                        est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]
+                        est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]; global_idx = est_item["global_idx"]
                         
-                        original_idx = estampados.index(est_nombre) + 1 if est_nombre in estampados else 1
-                        
-                        title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {original_idx}: {est_nombre}</b>"
+                        title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {global_idx}: {est_nombre}</b>"
                         if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
                         title = Paragraph(title_text, t_title)
                         
@@ -1336,7 +1348,7 @@ def api_magia_madre():
                     wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=600, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
                     elementos.append(wrap_t_grid)
                     
-                    if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_estampados == estampados_por_hoja[-1]):
+                    if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_idx == len(estampados_por_hoja) - 1):
                         elementos.append(PageBreak())
 
         doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
@@ -1358,7 +1370,7 @@ def api_magia_pedido():
     
     req = request.get_json()
     modelo = req.get('modelo', '').strip().upper()
-    estampados = req.get('estampados', [])
+    estampados = [e for e in req.get('estampados', []) if e.strip()]
     if not estampados: estampados = ["SIN ESTAMPADO"]
     pedidos_app = req.get('pedidos', {}) 
     folio_arranque = int(req.get('folio_arranque', 1))
@@ -1454,7 +1466,7 @@ def api_magia_pedido():
         if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
         elementos = []
         estilos = getSampleStyleSheet()
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
