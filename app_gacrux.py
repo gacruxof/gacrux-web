@@ -66,7 +66,7 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
-# 🔥 FUNCIÓN GENERADORA DE CÓDIGOS INDUSTRIALES (SINCRONIZADA CON ESCRITORIO) 🔥
+# 🔥 FUNCIÓN GENERADORA DE CÓDIGOS INDUSTRIALES 🔥
 # ==============================================================================
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
@@ -746,6 +746,32 @@ def api_magia_madre():
         req = request.get_json()
         step = req.get('step', 'all')
         modelo = req.get('modelo', '').strip().upper()
+        
+        # 🔥 RESTRICCIÓN DE IMAGEN OBLIGATORIA DESDE EL INICIO 🔥
+        db = conectar_bd(); cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
+        row_img = cursor.fetchone()
+        if not row_img or not row_img.get('imagen_dibujo'):
+            cursor.close(); db.close()
+            return jsonify({'error': f'⛔ IMAGEN OBLIGATORIA: Por favor, sube el dibujo del modelo {modelo} en la sección de Reglas de Producción antes de generar.'}), 400
+        
+        imagen_blob = row_img['imagen_dibujo']
+        formato_img = row_img.get('formato_img', '1500x1900 (Frente)')
+
+        cursor.execute("SELECT cuerpos_ids FROM recetas_madre WHERE modelo = %s", (modelo,))
+        row_ids = cursor.fetchone()
+        ids_guardados = json.loads(row_ids['cuerpos_ids']) if row_ids and row_ids.get('cuerpos_ids') else []
+        cuerpos_del_modelo = []
+        if ids_guardados:
+            placeholders = ','.join(['%s']*len(ids_guardados))
+            cursor.execute(f"SELECT id, nombre, tipo_multiplicador FROM cuerpos_base WHERE id IN ({placeholders})", tuple(ids_guardados))
+            res_cuerpos = cursor.fetchall()
+            for id_g in ids_guardados:
+                for row in res_cuerpos:
+                    if row['id'] == id_g: cuerpos_del_modelo.append(row); break
+        if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
+        cursor.close(); db.close()
+
         raw_estampados = req.get('estampados', [])
         estampados_por_folio = int(req.get('estampados_por_folio', 4))
         colores = req.get('colores', [])
@@ -756,74 +782,57 @@ def api_magia_madre():
         fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
         str_folios = ", ".join([str(f).zfill(2) for f in folios_a_usar])
 
-        imagen_blob = None; formato_img = "1500x1900 (Frente)"; cuerpos_del_modelo = []; datos_inventario_global = []; datos_corte = []
+        datos_inventario_global = []; datos_corte = []
 
-        db = None; cursor = None
-        try:
-            db = conectar_bd(); cursor = db.cursor(dictionary=True)
-            cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
-            row_img = cursor.fetchone()
-            if row_img:
-                imagen_blob = row_img['imagen_dibujo']; formato_img = row_img['formato_img'] if row_img['formato_img'] else "1500x1900 (Frente)"
+        for c in colores:
+            lienzos = safe_int(datos_lienzo_color.get(c, 0))
+            fila = {"color": c, "lienzos": lienzos, "totales_talla": {t: 0 for t in tallas_usadas}, "gran_total": 0}
+            for t in tallas_usadas: 
+                prendas = lienzos * safe_int(cuerpos_actuales.get(t, 0))
+                fila["totales_talla"][t] = prendas; fila["gran_total"] += prendas
+            datos_corte.append(fila)
+        datos_corte.sort(key=lambda x: x["gran_total"], reverse=True)
+        num_folios = len(folios_a_usar)
+        
+        est_por_folio_raw = [raw_estampados[i:i + estampados_por_folio] for i in range(0, len(raw_estampados), estampados_por_folio)]
+        est_por_folio = []; estampados = []
+        for chunk in est_por_folio_raw:
+            clean_chunk = [e for e in chunk if e.strip()]
+            if not clean_chunk: clean_chunk = ["SIN ESTAMPADO"]
+            est_por_folio.append(clean_chunk); estampados.extend(clean_chunk)
+        if not estampados: estampados = ["SIN ESTAMPADO"]; est_por_folio = [["SIN ESTAMPADO"]]
+        while len(est_por_folio) < num_folios: est_por_folio.append(["SIN ESTAMPADO"])
 
-            cursor.execute("SELECT cuerpos_ids FROM recetas_madre WHERE modelo = %s", (modelo,))
-            row_ids = cursor.fetchone()
-            ids_guardados = json.loads(row_ids['cuerpos_ids']) if row_ids and row_ids.get('cuerpos_ids') else []
-            if ids_guardados:
-                placeholders = ','.join(['%s']*len(ids_guardados))
-                cursor.execute(f"SELECT id, nombre, tipo_multiplicador FROM cuerpos_base WHERE id IN ({placeholders})", tuple(ids_guardados))
-                res_cuerpos = cursor.fetchall()
-                for id_g in ids_guardados:
-                    for row in res_cuerpos:
-                        if row['id'] == id_g: cuerpos_del_modelo.append(row); break
-            if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
+        total_ingresado_nube = 0; current_global_idx = 1
+        mapa_bd = {"T-12": "talla_t12", "T-16": "talla_t16", "EX CH": "talla_ex_ch", "CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX G": "talla_ex_g"}
 
-            for c in colores:
-                lienzos = safe_int(datos_lienzo_color.get(c, 0))
-                fila = {"color": c, "lienzos": lienzos, "totales_talla": {t: 0 for t in tallas_usadas}, "gran_total": 0}
-                for t in tallas_usadas: 
-                    prendas = lienzos * safe_int(cuerpos_actuales.get(t, 0))
-                    fila["totales_talla"][t] = prendas; fila["gran_total"] += prendas
-                datos_corte.append(fila)
-            datos_corte.sort(key=lambda x: x["gran_total"], reverse=True)
-            num_folios = len(folios_a_usar)
-            
-            est_por_folio_raw = [raw_estampados[i:i + estampados_por_folio] for i in range(0, len(raw_estampados), estampados_por_folio)]
-            est_por_folio = []; estampados = []
-            for chunk in est_por_folio_raw:
-                clean_chunk = [e for e in chunk if e.strip()]
-                if not clean_chunk: clean_chunk = ["SIN ESTAMPADO"]
-                est_por_folio.append(clean_chunk); estampados.extend(clean_chunk)
-            if not estampados: estampados = ["SIN ESTAMPADO"]; est_por_folio = [["SIN ESTAMPADO"]]
-            while len(est_por_folio) < num_folios: est_por_folio.append(["SIN ESTAMPADO"])
-
-            total_ingresado_nube = 0; current_global_idx = 1
-            mapa_bd = {"T-12": "talla_t12", "T-16": "talla_t16", "EX CH": "talla_ex_ch", "CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX G": "talla_ex_g"}
-
-            for i_f, folio_actual in enumerate(folios_a_usar):
-                estampados_del_folio = est_por_folio[i_f]; estampados_data = []
-                for est_name in estampados_del_folio:
-                    estampados_data.append({"nombre": est_name, "filas": [], "global_idx": current_global_idx}); current_global_idx += 1
-                    
-                modelo_folio_nube = f"{modelo} {str(folio_actual).zfill(2)}"
-                for fila_corte in datos_corte:
-                    c = fila_corte["color"]; reparto_por_talla = {t: [] for t in tallas_usadas}
-                    for t in tallas_usadas:
-                        total_corte = fila_corte["totales_talla"][t]; total_folio = total_corte // num_folios
-                        num_est_folio = len(estampados_data)
-                        if num_est_folio > 0:
-                            base = total_folio // num_est_folio; sobra = total_folio % num_est_folio
-                            for i_e in range(num_est_folio):
-                                asignado = base + 1 if i_e < sobra else base
-                                reparto_por_talla[t].append(asignado)
-                    for i_e, est_dict in enumerate(estampados_data):
-                        fila_inv = {"color": c, "tallas": {}}
-                        for t in tallas_usadas: fila_inv["tallas"][t] = reparto_por_talla[t][i_e]
-                        est_dict["filas"].append(fila_inv)
-
-                datos_inventario_global.append({"folio": str(folio_actual).zfill(2), "estampados": estampados_data})
+        for i_f, folio_actual in enumerate(folios_a_usar):
+            estampados_del_folio = est_por_folio[i_f]; estampados_data = []
+            for est_name in estampados_del_folio:
+                estampados_data.append({"nombre": est_name, "filas": [], "global_idx": current_global_idx}); current_global_idx += 1
                 
-                if step in ['db', 'all']:
+            modelo_folio_nube = f"{modelo} {str(folio_actual).zfill(2)}"
+            for fila_corte in datos_corte:
+                c = fila_corte["color"]; reparto_por_talla = {t: [] for t in tallas_usadas}
+                for t in tallas_usadas:
+                    total_corte = fila_corte["totales_talla"][t]; total_folio = total_corte // num_folios
+                    num_est_folio = len(estampados_data)
+                    if num_est_folio > 0:
+                        base = total_folio // num_est_folio; sobra = total_folio % num_est_folio
+                        for i_e in range(num_est_folio):
+                            asignado = base + 1 if i_e < sobra else base
+                            reparto_por_talla[t].append(asignado)
+                for i_e, est_dict in enumerate(estampados_data):
+                    fila_inv = {"color": c, "tallas": {}}
+                    for t in tallas_usadas: fila_inv["tallas"][t] = reparto_por_talla[t][i_e]
+                    est_dict["filas"].append(fila_inv)
+
+            datos_inventario_global.append({"folio": str(folio_actual).zfill(2), "estampados": estampados_data})
+            
+            # 🔥 PASO 1: BASE DE DATOS 🔥
+            if step in ['db', 'all']:
+                db = conectar_bd(); cursor = db.cursor(dictionary=True)
+                try:
                     for est_item in estampados_data:
                         est_nombre = est_item["nombre"]
                         for fila in est_item["filas"]:
@@ -851,20 +860,16 @@ def api_magia_madre():
                                         cod = generar_codigo_13_nube(cursor, modelo_folio_nube, est_nombre, c, t)
                                         cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
                                                        (cod, modelo_folio_nube, est_nombre, c, t, panel_id))
-            
-            if step in ['db', 'all']:
-                if total_ingresado_nube > 0:
-                    cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE', 'SISTEMA')", 
-                                   (modelo, total_ingresado_nube, fecha_txt))
-                cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folios_a_usar[-1] + 1, modelo))
-                db.commit()
-
-        except Exception as e:
-            if db: db.rollback()
-            return jsonify({'error': "Fallo Base de Datos: " + str(e)}), 500
-        finally:
-            if cursor: cursor.close()
-            if db: db.close()
+                    
+                    if total_ingresado_nube > 0:
+                        cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE', 'SISTEMA')", 
+                                       (modelo, total_ingresado_nube, fecha_txt))
+                    cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folios_a_usar[-1] + 1, modelo))
+                    db.commit()
+                except Exception as e:
+                    db.rollback(); raise e
+                finally:
+                    cursor.close(); db.close()
 
         if step == 'db': return jsonify({'status': 'ok'})
 
@@ -875,100 +880,96 @@ def api_magia_madre():
         estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
 
-        if imagen_blob:
-            try:
-                img = PILImage.open(io.BytesIO(imagen_blob))
-                if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-                    alpha = img.convert('RGBA').split()[-1]
-                    bg = PILImage.new("RGB", img.size, (255, 255, 255))
-                    bg.paste(img, mask=alpha)
-                    img = bg
-                elif img.mode != 'RGB': 
-                    img = img.convert('RGB')
-                
-                img.thumbnail((300, 300))
-                temp_io = io.BytesIO()
-                img.save(temp_io, format='PNG')
-                temp_io_bytes = temp_io.getvalue()
-                w_img = 220 if "2500" in formato_img else 130
-            except:
-                temp_io_bytes = None
-        else: temp_io_bytes = None
+        try:
+            img = PILImage.open(io.BytesIO(imagen_blob))
+            if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+                alpha = img.convert('RGBA').split()[-1]
+                bg = PILImage.new("RGB", img.size, (255, 255, 255))
+                bg.paste(img, mask=alpha)
+                img = bg
+            elif img.mode != 'RGB': 
+                img = img.convert('RGB')
+            img.thumbnail((300, 300))
+            temp_io = io.BytesIO()
+            img.save(temp_io, format='PNG')
+            temp_io_bytes = temp_io.getvalue()
+            w_img = 220 if "2500" in formato_img else 130
+        except Exception as e:
+            return jsonify({'error': f'⛔ IMAGEN CORRUPTA: No se pudo procesar el dibujo de {modelo}. Vuelve a subirlo en Reglas de Producción.'}), 400
 
         # 1. DIBUJAR HOJAS DE CORTE
-        if temp_io_bytes: 
+        for particion_folio in folios_a_usar:
             try: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
             except: logo = ""
-        else: logo = ""
 
-        t_header_corte = Table([
-            [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", style_header_corte), 
-             Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
-             Paragraph(f"<font color='red'><b>FOLIO:</b> {str_folios}</font>", ParagraphStyle(name='hr', alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12))],
-            [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
-        ], colWidths=[194, 194, 194], rowHeights=[None, 135], hAlign='CENTER')
-        t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
-        elementos.append(t_header_corte); elementos.append(Spacer(1, 10))
+            t_header_corte = Table([
+                [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", style_header_corte), 
+                 Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
+                 Paragraph(f"<font color='red'><b>FOLIO:</b> {str_folios}</font>", ParagraphStyle(name='hr', alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12))],
+                [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
+            ], colWidths=[194, 194, 194], rowHeights=[None, 135], hAlign='CENTER')
+            t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
+            elementos.append(t_header_corte); elementos.append(Spacer(1, 10))
 
-        tallas_todas = tallas_usadas
-        w_talla_corte = 432 / max(1, len(tallas_todas))
-        
-        data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS"] + [""] * (len(tallas_todas) - 1), ["", ""] + tallas_todas]
-        for c_dict in cuerpos_del_modelo:
-            nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
-            if 'x2' in tipo_mult: txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
-            elif 'A/B' in tipo_mult: txt_cant = "L-A | L-B"; f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
-            else: txt_cant = "1"; f_calc = lambda c: str(c) if c > 0 else ""
-            fila = [Paragraph(nombre_p, estilo_wrap), txt_cant]
-            for t in tallas_todas: fila.append(f_calc(safe_int(cuerpos_actuales.get(t, 0))))
-            data_t1.append(fila)
+            tallas_todas = tallas_usadas
+            w_talla_corte = 432 / max(1, len(tallas_todas))
+            
+            data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS"] + [""] * (len(tallas_todas) - 1), ["", ""] + tallas_todas]
+            for c_dict in cuerpos_del_modelo:
+                nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
+                if 'x2' in tipo_mult: txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
+                elif 'A/B' in tipo_mult: txt_cant = "L-A | L-B"; f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
+                else: txt_cant = "1"; f_calc = lambda c: str(c) if c > 0 else ""
+                fila = [Paragraph(nombre_p, estilo_wrap), txt_cant]
+                for t in tallas_todas: fila.append(f_calc(safe_int(cuerpos_actuales.get(t, 0))))
+                data_t1.append(fila)
 
-        t1 = Table(data_t1, colWidths=[80, 70] + [w_talla_corte] * len(tallas_todas), hAlign='CENTER')
-        t1.setStyle(TableStyle([
-            ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
-            ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,1), 'Helvetica-Bold'),
-            ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
-        ]))
+            t1 = Table(data_t1, colWidths=[80, 70] + [w_talla_corte] * len(tallas_todas), hAlign='CENTER')
+            t1.setStyle(TableStyle([
+                ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
+                ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,1), 'Helvetica-Bold'),
+                ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+            ]))
 
-        data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
-        marcados = []; current_marcado = []; current_sum = 0
-        for d in datos_corte:
-            if current_sum + d["lienzos"] > 80 and current_sum > 0:
-                marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
-            else: current_marcado.append(d); current_sum += d["lienzos"]
-        if current_marcado: marcados.append(current_marcado)
+            data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
+            marcados = []; current_marcado = []; current_sum = 0
+            for d in datos_corte:
+                if current_sum + d["lienzos"] > 80 and current_sum > 0:
+                    marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
+                else: current_marcado.append(d); current_sum += d["lienzos"]
+            if current_marcado: marcados.append(current_marcado)
 
-        suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; row_idx = 1
-        estilos_tabla2 = [
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
-        ]
-        for num_m, marcado_data in enumerate(marcados):
-            start_row = row_idx
-            for i, d in enumerate(marcado_data):
-                fila = [f"Marcado\n{num_m + 1}" if i == 0 else "", Paragraph(d["color"], estilo_wrap), str(d["lienzos"])]
-                suma_lienzos += d["lienzos"]
-                for t in tallas_todas:
-                    val = d["totales_talla"].get(t, 0); fila.append(str(val) if val > 0 else ""); suma_tallas[t] += val
-                fila.append(str(d["gran_total"])); gran_total += d["gran_total"]; data_t2.append(fila); row_idx += 1
-            if len(marcado_data) > 1: estilos_tabla2.append(('SPAN', (0, start_row), (0, row_idx - 1)))
+            suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; row_idx = 1
+            estilos_tabla2 = [
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+            ]
+            for num_m, marcado_data in enumerate(marcados):
+                start_row = row_idx
+                for i, d in enumerate(marcado_data):
+                    fila = [f"Marcado\n{num_m + 1}" if i == 0 else "", Paragraph(d["color"], estilo_wrap), str(d["lienzos"])]
+                    suma_lienzos += d["lienzos"]
+                    for t in tallas_todas:
+                        val = d["totales_talla"].get(t, 0); fila.append(str(val) if val > 0 else ""); suma_tallas[t] += val
+                    fila.append(str(d["gran_total"])); gran_total += d["gran_total"]; data_t2.append(fila); row_idx += 1
+                if len(marcado_data) > 1: estilos_tabla2.append(('SPAN', (0, start_row), (0, row_idx - 1)))
 
-        fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
-        for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
-        fila_final.append(str(gran_total)); data_t2.append(fila_final)
-        estilos_tabla2.extend([
-            ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
-            ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
-        ])
-        
-        w_talla_rollo = 337 / max(1, len(tallas_todas))
-        t2 = Table(data_t2, colWidths=[55, 90, 50] + [w_talla_rollo] * len(tallas_todas) + [50], hAlign='CENTER')
-        t2.setStyle(TableStyle(estilos_tabla2))
+            fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
+            for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
+            fila_final.append(str(gran_total)); data_t2.append(fila_final)
+            estilos_tabla2.extend([
+                ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
+                ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
+            ])
+            
+            w_talla_rollo = 337 / max(1, len(tallas_todas))
+            t2 = Table(data_t2, colWidths=[55, 90, 50] + [w_talla_rollo] * len(tallas_todas) + [50], hAlign='CENTER')
+            t2.setStyle(TableStyle(estilos_tabla2))
 
-        tablas_encogibles = KeepInFrame(maxWidth=582, maxHeight=500, content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], mode='shrink', vAlign='TOP', hAlign='CENTER')
-        elementos.append(tablas_encogibles); elementos.append(PageBreak())
+            tablas_encogibles = KeepInFrame(maxWidth=582, maxHeight=500, content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], mode='shrink', vAlign='TOP', hAlign='CENTER')
+            elementos.append(tablas_encogibles); elementos.append(PageBreak())
 
         # 2. DIBUJAR INVENTARIOS UNIFICADOS
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
@@ -1057,7 +1058,7 @@ def api_magia_madre():
                     elementos.append(t_master)
                     if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_idx == len(estampados_por_hoja) - 1):
                         elementos.append(PageBreak())
-        
+
         if not elementos:
             elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
 
@@ -1079,6 +1080,32 @@ def api_magia_pedido():
         req = request.get_json()
         step = req.get('step', 'all')
         modelo = req.get('modelo', '').strip().upper()
+        
+        # 🔥 RESTRICCIÓN DE IMAGEN OBLIGATORIA DESDE EL INICIO 🔥
+        db = conectar_bd(); cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
+        row_img = cursor.fetchone()
+        if not row_img or not row_img.get('imagen_dibujo'):
+            cursor.close(); db.close()
+            return jsonify({'error': f'⛔ IMAGEN OBLIGATORIA: Por favor, sube el dibujo del modelo {modelo} en la sección de Reglas de Producción antes de generar.'}), 400
+        
+        imagen_blob = row_img['imagen_dibujo']
+        formato_img = row_img.get('formato_img', '1500x1900 (Frente)')
+
+        cursor.execute("SELECT cuerpos_ids FROM recetas_madre WHERE modelo = %s", (modelo,))
+        row_ids = cursor.fetchone()
+        ids_guardados = json.loads(row_ids['cuerpos_ids']) if row_ids and row_ids.get('cuerpos_ids') else []
+        cuerpos_del_modelo = []
+        if ids_guardados:
+            placeholders = ','.join(['%s']*len(ids_guardados))
+            cursor.execute(f"SELECT id, nombre, tipo_multiplicador FROM cuerpos_base WHERE id IN ({placeholders})", tuple(ids_guardados))
+            res_cuerpos = cursor.fetchall()
+            for id_g in ids_guardados:
+                for row in res_cuerpos:
+                    if row['id'] == id_g: cuerpos_del_modelo.append(row); break
+        if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
+        cursor.close(); db.close()
+
         raw_estampados = req.get('estampados', [])
         estampados_por_folio = int(req.get('estampados_por_folio', 4))
         pedidos_app = req.get('pedidos', {}) 
@@ -1096,14 +1123,19 @@ def api_magia_pedido():
         def total_pedido_grupo(grupo): 
             return sum(safe_int(t_data.get(t, 0)) for c, t_data in pedidos_app.items() for t in grupo)
 
-        # 🔥 LA NUEVA IA: CREA COMBINACIONES 100% SEGURAS (LÍMITE EXACTO DE 6 CUERPOS) 🔥
+        # 🔥 LA NUEVA IA MATEMÁTICA: CREA COMBINACIONES 100% SEGURAS (LÍMITE EXACTO DE 6 CUERPOS) 🔥
         def get_combos(n):
             combos = []
             def search(path, current_sum):
                 if len(path) == n:
-                    combos.append(path)
+                    if current_sum <= 6:
+                        combos.append(path)
                     return
-                for i in range(1, 7 - current_sum - (n - 1 - len(path)) + 1):
+                min_needed_for_rest = n - 1 - len(path)
+                max_val = 6 - current_sum - min_needed_for_rest
+                if max_val < 1:
+                    return
+                for i in range(1, max_val + 1):
                     search(path + [i], current_sum + i)
             search([], 0)
             return combos
@@ -1131,25 +1163,24 @@ def api_magia_pedido():
         def particionar_tallas(grupo):
             n = len(grupo)
             if n <= 3:
-                # Intenta agrupar hasta 3 tallas juntas en una hoja siempre.
+                # 1 a 3 tallas: Obliga a buscar la mejor combinación en 1 sola hoja.
                 w, tl, c, l = calcular_desperdicio(grupo)
                 return [(grupo, c, l)]
             elif n == 4:
-                # 4 tallas: Si se puede en una hoja lo hace. Si hay mucho desperdicio, parte 2/2 juntando parecidas.
+                # 4 tallas: Intenta en 1 hoja. Si el desperdicio supera el 50%, parte en 2 y 2.
                 w1, tl1, c1, l1 = calcular_desperdicio(grupo)
                 tot_ped = total_pedido_grupo(grupo)
-                if w1 <= (tot_ped * 0.50):
+                if tot_ped > 0 and w1 <= (tot_ped * 0.50):
                     return [(grupo, c1, l1)]
                 else:
                     return particionar_tallas(grupo[:2]) + particionar_tallas(grupo[2:])
             elif n == 5:
-                # 5 tallas: Siempre las parte en 3 y 2.
+                # 5 tallas: Siempre parte en 3 y 2.
                 return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:])
-            elif n == 6:
-                # 6 tallas: Siempre las parte en 3 y 3.
-                return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:])
-            else: # 7 tallas
-                return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:5]) + particionar_tallas(grupo[5:])
+            else:
+                # 6+ tallas: Parte a la mitad (3/3 o 3/4...)
+                mid = n // 2
+                return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
 
         particiones = particionar_tallas(tallas_activas)
 
@@ -1162,9 +1193,8 @@ def api_magia_pedido():
 
         # 🔥 PASO 1: BASE DE DATOS 🔥
         if step in ['db', 'all']:
-            db = None; cursor = None
+            db = conectar_bd(); cursor = db.cursor(dictionary=True)
             try:
-                db = conectar_bd(); cursor = db.cursor(dictionary=True)
                 total_prod = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
                 for particion in particiones:
                     grupo_tallas, cuerpos_dict, lienzos = particion
@@ -1216,40 +1246,14 @@ def api_magia_pedido():
                 cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
                 db.commit()
             except Exception as e:
-                if db: db.rollback()
-                return jsonify({'error': "Error de base de datos: " + str(e)}), 500
+                db.rollback(); raise e
             finally:
-                if cursor: cursor.close()
-                if db: db.close()
+                cursor.close(); db.close()
 
             if step == 'db': return jsonify({'status': 'ok'})
 
         # 🔥 PASO 2: DIBUJAR PDF 🔥
         if step in ['pdf', 'all']:
-            db = None; cursor = None
-            imagen_blob = None; formato_img = "1500x1900 (Frente)"; cuerpos_del_modelo = []
-            try:
-                db = conectar_bd(); cursor = db.cursor(dictionary=True)
-                cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
-                row_img = cursor.fetchone()
-                if row_img:
-                    imagen_blob = row_img['imagen_dibujo']; formato_img = row_img['formato_img'] if row_img['formato_img'] else "1500x1900 (Frente)"
-
-                cursor.execute("SELECT cuerpos_ids FROM recetas_madre WHERE modelo = %s", (modelo,))
-                row_ids = cursor.fetchone()
-                ids_guardados = json.loads(row_ids['cuerpos_ids']) if row_ids and row_ids.get('cuerpos_ids') else []
-                if ids_guardados:
-                    placeholders = ','.join(['%s']*len(ids_guardados))
-                    cursor.execute(f"SELECT id, nombre, tipo_multiplicador FROM cuerpos_base WHERE id IN ({placeholders})", tuple(ids_guardados))
-                    res_cuerpos = cursor.fetchall()
-                    for id_g in ids_guardados:
-                        for row in res_cuerpos:
-                            if row['id'] == id_g: cuerpos_del_modelo.append(row); break
-                if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
-            finally:
-                if cursor: cursor.close()
-                if db: db.close()
-
             total_prod = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
             for particion in particiones:
                 grupo_tallas, cuerpos_dict, lienzos = particion
@@ -1262,34 +1266,30 @@ def api_magia_pedido():
             estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
             style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
 
-            if imagen_blob:
-                try:
-                    img = PILImage.open(io.BytesIO(imagen_blob))
-                    if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-                        alpha = img.convert('RGBA').split()[-1]
-                        bg = PILImage.new("RGB", img.size, (255, 255, 255))
-                        bg.paste(img, mask=alpha)
-                        img = bg
-                    elif img.mode != 'RGB': 
-                        img = img.convert('RGB')
-                    
-                    img.thumbnail((300, 300))
-                    temp_io = io.BytesIO()
-                    img.save(temp_io, format='PNG')
-                    temp_io_bytes = temp_io.getvalue()
-                    w_img = 220 if "2500" in formato_img else 130
-                except: temp_io_bytes = None
-            else: temp_io_bytes = None
+            try:
+                img = PILImage.open(io.BytesIO(imagen_blob))
+                if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+                    alpha = img.convert('RGBA').split()[-1]
+                    bg = PILImage.new("RGB", img.size, (255, 255, 255))
+                    bg.paste(img, mask=alpha)
+                    img = bg
+                elif img.mode != 'RGB': 
+                    img = img.convert('RGB')
+                img.thumbnail((300, 300))
+                temp_io = io.BytesIO()
+                img.save(temp_io, format='PNG')
+                temp_io_bytes = temp_io.getvalue()
+                w_img = 220 if "2500" in formato_img else 130
+            except Exception as e:
+                return jsonify({'error': f'⛔ IMAGEN CORRUPTA: No se pudo procesar el dibujo de {modelo}. Vuelve a subirlo en Reglas de Producción.'}), 400
 
             # 1. DIBUJAR HOJAS DE CORTE
             for particion in particiones:
                 grupo_tallas, cuerpos, lienzos = particion
                 
                 # LA IMAGEN SE RECREA DE FORMA SEGURA EN CADA HOJA (NO COLAPSA)
-                if temp_io_bytes: 
-                    try: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
-                    except: logo = ""
-                else: logo = ""
+                try: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
+                except: logo = ""
 
                 t_header_corte = Table([
                     [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", style_header_corte), 
@@ -1386,9 +1386,10 @@ def api_magia_pedido():
                     ], colWidths=[291, 291], hAlign='CENTER')
 
                     tablas_estampados = []
-                    for est_item in lote_estampados:
-                        original_idx = estampados.index(est_item) + 1 if est_item in estampados else 1
-                        title_text = f"<font color='#d97706'>▐</font> <b>ESTAMPADO {original_idx}: {est_item}</b>"
+                    for i_e, est_item in enumerate(lote_estampados):
+                        # 🔥 FIX DUPLICACIÓN ESTAMPADOS: USA EL ÍNDICE REAL, NO EL BUSCADOR TEXTUAL 🔥
+                        original_idx = lote_idx * estampados_por_folio + i_e
+                        title_text = f"<font color='#d97706'>▐</font> <b>ESTAMPADO {original_idx + 1}: {est_item}</b>"
                         if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
                         title = Paragraph(title_text, t_title)
                         
@@ -1416,10 +1417,10 @@ def api_magia_pedido():
                                 ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
                                 
                                 base_prod = prod // num_est; sobra_prod = prod % num_est
-                                prod_est = base_prod + 1 if estampados.index(est_item) < sobra_prod else base_prod
+                                prod_est = base_prod + 1 if original_idx < sobra_prod else base_prod
                                 
                                 base_ped = ped // num_est; sobra_ped = ped % num_est
-                                ped_est = base_ped + 1 if estampados.index(est_item) < sobra_ped else base_ped
+                                ped_est = base_ped + 1 if original_idx < sobra_ped else base_ped
                                 
                                 sob_est = max(0, prod_est - ped_est)
                                 
