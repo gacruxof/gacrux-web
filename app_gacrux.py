@@ -46,18 +46,26 @@ class UsuarioWeb(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
+    db = None
+    cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id, usuario, nombre_real, rol_puesto FROM usuarios_gacrux WHERE id = %s", (user_id,))
         res = cursor.fetchone()
-        cursor.close(); db.close()
-        if res: return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'], res['rol_puesto'])
-    except: pass
+        if res: 
+            return UsuarioWeb(res['id'], res['usuario'], res['nombre_real'], res['rol_puesto'])
+    except Exception as e:
+        pass
+    finally:
+        if cursor: 
+            cursor.close()
+        if db: 
+            db.close()
     return None
 
 # ==============================================================================
-# HTML WEB (SE MANTIENE INTACTO)
+# HTML WEB (PANEL DE ADMINISTRACIÓN Y POS)
 # ==============================================================================
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -501,13 +509,13 @@ def login():
     if request.method == 'POST':
         user_input = request.form.get('usuario', '').strip().lower()
         pass_input = request.form.get('password', '').strip()
+        db = None
+        cursor = None
         try:
             db = conectar_bd()
             cursor = db.cursor(dictionary=True)
             cursor.execute("SELECT id, usuario, nombre_real, rol_puesto, password FROM usuarios_gacrux WHERE usuario = %s", (user_input,))
             usuario_bd = cursor.fetchone()
-            cursor.close()
-            db.close()
             if usuario_bd and usuario_bd['password'] == pass_input:
                 user_obj = UsuarioWeb(usuario_bd['id'], usuario_bd['usuario'], usuario_bd['nombre_real'], usuario_bd['rol_puesto'])
                 login_user(user_obj)
@@ -516,6 +524,11 @@ def login():
                 flash('Usuario o contraseña incorrectos')
         except Exception as e:
             flash(f'Error de conexión: {e}')
+        finally:
+            if cursor:
+                cursor.close()
+            if db:
+                db.close()
     return render_template_string(HTML_LOGIN)
 
 @app.route('/')
@@ -527,13 +540,21 @@ def index():
 @app.route('/api/buscar')
 @login_required
 def api_buscar():
-    db = conectar_bd()
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
-    resultados = cursor.fetchall()
-    cursor.close()
-    db.close()
-    return jsonify(resultados)
+    db = None
+    cursor = None
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
+        resultados = cursor.fetchall()
+        return jsonify(resultados)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
 
 @app.route('/api/guardar_stock_web', methods=['POST'])
 @login_required
@@ -550,6 +571,8 @@ def api_guardar_stock_web():
     if columna_sql not in columnas_permitidas or nuevo_valor < 0: 
         return jsonify({'status': 'error', 'msg': 'Parámetros no válidos.'})
         
+    db = None
+    cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
@@ -562,14 +585,17 @@ def api_guardar_stock_web():
             cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, %s, %s, %s, 0, 0.00, 0.00, %s, 'EDICION MANUAL WEB', %s)", 
                            (info['modelo'], info['estampado'], info['color'], talla_legible, fecha_actual, f"{current_user.nombre_real} (Móvil)"))
             db.commit()
-            cursor.close()
-            db.close()
             return jsonify({'status': 'ok'})
-        cursor.close()
-        db.close()
         return jsonify({'status': 'error', 'msg': 'Fila no encontrada.'})
     except Exception as e:
+        if db:
+            db.rollback()
         return jsonify({'status': 'error', 'msg': str(e)})
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
 
 @app.route('/api/baja', methods=['POST'])
 @login_required
@@ -577,58 +603,68 @@ def api_baja():
     data = request.get_json()
     codigo = data.get('codigo', '').strip()
     
-    db = conectar_bd()
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT modelo, estampado, color, talla, precio, panel_stock_id FROM inventario WHERE codigo_barras = %s", (codigo,))
-    prenda = cursor.fetchone()
-    
-    if prenda:
-        talla_map = {
-            'T-12': 'talla_t12', 'T-16': 'talla_t16', 'EX CH': 'talla_ex_ch',
-            'CH': 'talla_ch', 'M': 'talla_m', 'G': 'talla_g', 
-            'EG': 'talla_ex_g', 'XG': 'talla_ex_g', 'EX G': 'talla_ex_g'
-        }
-        col = talla_map.get(prenda['talla'].upper().strip())
+    db = None
+    cursor = None
+    try:
+        db = conectar_bd()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT modelo, estampado, color, talla, precio, panel_stock_id FROM inventario WHERE codigo_barras = %s", (codigo,))
+        prenda = cursor.fetchone()
         
-        if col:
-            p_id = prenda['panel_stock_id']
-            if not p_id:
-                cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
-                res_p = cursor.fetchone()
-                if res_p: p_id = res_p['id']
+        if prenda:
+            talla_map = {
+                'T-12': 'talla_t12', 'T-16': 'talla_t16', 'EX CH': 'talla_ex_ch',
+                'CH': 'talla_ch', 'M': 'talla_m', 'G': 'talla_g', 
+                'EG': 'talla_ex_g', 'XG': 'talla_ex_g', 'EX G': 'talla_ex_g'
+            }
+            col = talla_map.get(prenda['talla'].upper().strip())
             
-            if p_id:
-                cursor.execute("SHOW COLUMNS FROM panel_stock LIKE %s", (col,))
-                if not cursor.fetchone() and col == 'talla_ex_g': col = 'talla_eg'
+            if col:
+                p_id = prenda['panel_stock_id']
+                if not p_id:
+                    cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
+                    res_p = cursor.fetchone()
+                    if res_p: 
+                        p_id = res_p['id']
                 
-                cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
-                res_stock = cursor.fetchone()
-                
-                if res_stock:
-                    if res_stock[col] <= 0:
-                        cursor.close(); db.close()
-                        return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
+                if p_id:
+                    cursor.execute("SHOW COLUMNS FROM panel_stock LIKE %s", (col,))
+                    if not cursor.fetchone() and col == 'talla_ex_g': 
+                        col = 'talla_eg'
+                    
+                    cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
+                    res_stock = cursor.fetchone()
+                    
+                    if res_stock:
+                        if res_stock[col] <= 0:
+                            return jsonify({'status': 'error', 'msg': f"{prenda['modelo']} ({prenda['talla']}) ya está en 0."})
+                            
+                        cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (p_id,))
+                        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        precio_p = float(prenda['precio'])
                         
-                    cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (p_id,))
-                    fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    precio_p = float(prenda['precio'])
+                        sql_h = """
+                            INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
+                            VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
+                        """
+                        cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, current_user.nombre_real))
+                        db.commit()
+                        
+                        msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
+                        return jsonify({'status': 'ok', 'msg': msg})
+                    else:
+                        return jsonify({'status': 'error', 'msg': 'Borrada del Catálogo Maestro.'})
                     
-                    sql_h = """
-                        INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
-                        VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'WEB ALMACEN REGISTRO', %s)
-                    """
-                    cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, current_user.nombre_real))
-                    db.commit()
-                    
-                    msg = f"{prenda['modelo']} - {prenda['estampado']} ({prenda['talla']})"
-                    cursor.close(); db.close()
-                    return jsonify({'status': 'ok', 'msg': msg})
-                else:
-                    cursor.close(); db.close()
-                    return jsonify({'status': 'error', 'msg': 'Borrada del Catálogo Maestro.'})
-                
-    cursor.close(); db.close()
-    return jsonify({'status': 'error', 'msg': 'Código de barras no válido o desconectado.'})
+        return jsonify({'status': 'error', 'msg': 'Código de barras no válido o desconectado.'})
+    except Exception as e:
+        if db:
+            db.rollback()
+        return jsonify({'status': 'error', 'msg': str(e)})
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
 
 @app.route('/logout')
 @login_required
@@ -639,19 +675,6 @@ def logout():
 # ==============================================================================
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
-
-def dibujar_footer_firmas(canvas, doc):
-    canvas.saveState()
-    canvas.setFont("Helvetica-Bold", 9)
-    canvas.setFillColor(colors.black)
-    canvas.drawCentredString(150, 50, "___________________________________")
-    canvas.drawCentredString(150, 35, "DOBLADO")
-    canvas.drawCentredString(150, 20, "JACQUELINE TLATELPA XOLALTENCO")
-    canvas.drawCentredString(460, 50, "___________________________________")
-    canvas.drawCentredString(460, 35, "ALMACÉN")
-    canvas.drawCentredString(460, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
-    canvas.restoreState()
-
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
@@ -684,125 +707,38 @@ def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     return f"{mod_str}{est_str}{col_str}{talla_id:01d}"
 
 @app.route('/api/login', methods=['POST'])
-def api_login():
+def api_login_movil():
     datos = request.get_json()
     user_input = datos.get('usuario', '').strip().lower()
     pass_input = datos.get('password', '').strip()
+    
+    db = None
+    cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id, usuario, nombre_real, rol_puesto, password FROM usuarios_gacrux WHERE usuario = %s", (user_input,))
         usuario_bd = cursor.fetchone()
-        cursor.close()
-        db.close()
         
-        if usuario_bd and usuario_bd['password'] == pass_input:
-            token_sencillo = f"gacrux-auth-{usuario_bd['id']}"
+        if usuario_bd and usuario_bd['password'] == pass_input: 
+            token = f"gacrux-auth-{usuario_bd['id']}"
             return jsonify({
-                'token': token_sencillo,
-                'nombre_real': usuario_bd['nombre_real'],
+                'token': token, 
+                'nombre_real': usuario_bd['nombre_real'], 
                 'rol_puesto': usuario_bd['rol_puesto']
             }), 200
-        else:
+        else: 
             return jsonify({'error': 'Credenciales incorrectas'}), 401
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/inventario/descontar', methods=['POST'])
-def api_descontar():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): 
-        return jsonify({'error': 'Acceso no autorizado a la API'}), 401
-
-    data = request.get_json()
-    codigo = data.get('codigo_barras', '').strip()
-    realizado_por = data.get('realizado_por', 'App Nativa Flutter').strip()
-    
-    try:
-        db = conectar_bd()
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT modelo, estampado, color, talla, precio, panel_stock_id FROM inventario WHERE codigo_barras = %s", (codigo,))
-        prenda = cursor.fetchone()
-        
-        if prenda:
-            talla_map = {
-                'T-12': 'talla_t12', 'T-16': 'talla_t16', 'EX CH': 'talla_ex_ch',
-                'CH': 'talla_ch', 'M': 'talla_m', 'G': 'talla_g', 
-                'EG': 'talla_ex_g', 'XG': 'talla_ex_g', 'EX G': 'talla_ex_g'
-            }
-            col = talla_map.get(prenda['talla'].upper().strip())
-            
-            if col:
-                p_id = prenda['panel_stock_id']
-                if not p_id:
-                    cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s LIMIT 1", (prenda['modelo'], prenda['estampado'], prenda['color']))
-                    res_p = cursor.fetchone()
-                    if res_p: p_id = res_p['id']
-                
-                if p_id:
-                    cursor.execute("SHOW COLUMNS FROM panel_stock LIKE %s", (col,))
-                    if not cursor.fetchone() and col == 'talla_ex_g': col = 'talla_eg'
-                    
-                    cursor.execute(f"SELECT {col} FROM panel_stock WHERE id = %s", (p_id,))
-                    res_stock = cursor.fetchone()
-                    
-                    if res_stock and res_stock[col] > 0:
-                        cursor.execute(f"UPDATE panel_stock SET {col} = {col} - 1 WHERE id = %s", (p_id,))
-                        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        precio_p = float(prenda['precio'])
-                        
-                        sql_h = """
-                            INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por)
-                            VALUES (%s, %s, %s, %s, 1, %s, %s, %s, 'BAJA APP MOVIL', %s)
-                        """
-                        cursor.execute(sql_h, (prenda['modelo'], prenda['estampado'], prenda['color'], prenda['talla'], precio_p, precio_p, fecha_actual, realizado_por))
-                        db.commit()
-                        cursor.close()
-                        db.close()
-                        
-                        nombre_prenda = f"{prenda['modelo']} {prenda['estampado']} {prenda['color']} {prenda['talla']}"
-                        return jsonify({'status': 'ok', 'msg': nombre_prenda})
-        
-        cursor.close()
-        db.close()
-        return jsonify({'error': 'CÓDIGO INVÁLIDO O SIN STOCK'}), 400
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/app/inventario', methods=['GET'])
-def api_app_inventario():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'Acceso no autorizado'}), 401
-    try:
-        db = conectar_bd()
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM panel_stock ORDER BY modelo ASC, estampado ASC, color ASC")
-        resultados = cursor.fetchall()
-        cursor.close()
-        db.close()
-        return jsonify(resultados)
-    except Exception as e: 
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/pos/enviar', methods=['POST'])
-def api_pos_enviar():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header: return jsonify({'error': 'No autorizado'}), 401
-    codigo = request.get_json().get('codigo', '').strip()
-    if not codigo: return jsonify({'error': 'Sin código'}), 400
-    try:
-        db = conectar_bd()
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO cola_escaneos (codigo_barras, procesado) VALUES (%s, 0)", (codigo,))
-        db.commit()
-        cursor.close()
-        db.close()
-        return jsonify({'status': 'ok'})
-    except Exception as e: 
-        return jsonify({'error': str(e)}), 500
+    finally:
+        if cursor: cursor.close()
+        if db: db.close()
 
 @app.route('/api/app/bases', methods=['GET'])
 def api_app_bases():
+    db = None
+    cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
@@ -810,221 +746,35 @@ def api_app_bases():
         modelos = cursor.fetchall()
         cursor.execute("SELECT id, nombre FROM colores_base ORDER BY nombre ASC")
         colores = cursor.fetchall()
-        cursor.close()
-        db.close()
         return jsonify({'modelos': modelos, 'colores': colores})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/app/subir_lote', methods=['POST'])
-def api_subir_lote():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
-        
-    data = request.get_json()
-    modelo = data.get('modelo', '').strip().upper()
-    estampado = data.get('estampado', '').strip().upper()
-    color = data.get('color', '').strip().upper()
-    precio = float(data.get('precio', 250.0))
-    tallas = data.get('tallas', {})
-    realizado_por = data.get('realizado_por', 'App Móvil').strip()
-    
-    genero = data.get('genero', 'TODO').strip().upper()
-    estilo = data.get('estilo', 'NORMAL').strip().upper()
-    tipo_prenda = data.get('tipo_prenda', 'SUDADERA').strip().upper()
-    
-    if not modelo or not estampado or not color: return jsonify({'error': 'Faltan datos'}), 400
-        
-    try:
-        db = conectar_bd()
-        cursor = db.cursor(dictionary=True)
-        
-        cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo, estampado, color))
-        res = cursor.fetchone()
-        
-        ch = tallas.get('CH', 0)
-        m = tallas.get('M', 0)
-        g = tallas.get('G', 0)
-        talla_extra_nombre = tallas.get('EXTRA_NAME', 'EG').upper()
-        talla_extra_cant = tallas.get('EXTRA_CANT', 0)
-        
-        if res:
-            cursor.execute("""
-                UPDATE panel_stock 
-                SET talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_ex_g=talla_ex_g+%s,
-                    genero=%s, estilo=%s, tipo_prenda=%s
-                WHERE id=%s
-            """, (ch, m, g, talla_extra_cant, genero, estilo, tipo_prenda, res['id']))
-            panel_id = res['id']
-        else:
-            cursor.execute("""
-                INSERT INTO panel_stock (modelo, estampado, color, talla_ch, talla_m, talla_g, talla_ex_g, genero, estilo, tipo_prenda) 
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (modelo, estampado, color, ch, m, g, talla_extra_cant, genero, estilo, tipo_prenda))
-            panel_id = cursor.lastrowid
-            
-        tallas_ingresadas = []
-        if ch > 0: tallas_ingresadas.append(('CH', ch))
-        if m > 0: tallas_ingresadas.append(('M', m))
-        if g > 0: tallas_ingresadas.append(('G', g))
-        if talla_extra_cant > 0: tallas_ingresadas.append((talla_extra_nombre, talla_extra_cant))
-        
-        codigos_generados = []
-        total_ingresado = 0
-        
-        for talla_str, cantidad in tallas_ingresadas:
-            cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo, estampado, color, talla_str))
-            ex = cursor.fetchone()
-            if ex:
-                codigo_final = ex['codigo_barras']
-                cursor.execute("UPDATE inventario SET genero=%s, estilo=%s, tipo_prenda=%s WHERE codigo_barras=%s", (genero, estilo, tipo_prenda, codigo_final))
-            else:
-                codigo_final = generar_codigo_13_nube(cursor, modelo, estampado, color, talla_str)
-                cursor.execute("""
-                    INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (codigo_final, modelo, estampado, color, talla_str, precio, panel_id, genero, estilo, tipo_prenda))
-            
-            codigos_generados.append({"talla": talla_str, "codigo": codigo_final, "cantidad": cantidad})
-            total_ingresado += cantidad
-            
-        if total_ingresado > 0:
-            fecha_a = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE', %s)", 
-                           (modelo, estampado, color, "MÚLTIPLE", total_ingresado, fecha_a, realizado_por))
-            
-        db.commit()
-        cursor.close()
-        db.close()
-        return jsonify({'status': 'ok', 'codigos': codigos_generados, 'total': total_ingresado})
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
+    finally:
+        if cursor: cursor.close()
+        if db: db.close()
 
-@app.route('/api/app/actualizar_filtros', methods=['POST'])
-def api_actualizar_filtros():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
-    data = request.get_json()
-    modelo = data.get('modelo', '').strip().upper()
-    genero = data.get('genero', '').strip().upper()
-    estilo = data.get('estilo', '').strip().upper()
-    tipo_prenda = data.get('tipo_prenda', '').strip().upper()
-    try:
-        db = conectar_bd()
-        cursor = db.cursor()
-        cursor.execute("UPDATE panel_stock SET genero=%s, estilo=%s, tipo_prenda=%s WHERE modelo=%s", (genero, estilo, tipo_prenda, modelo))
-        cursor.execute("UPDATE inventario SET genero=%s, estilo=%s, tipo_prenda=%s WHERE modelo=%s", (genero, estilo, tipo_prenda, modelo))
-        db.commit()
-        cursor.close()
-        db.close()
-        return jsonify({'status': 'ok'})
-    except Exception as e: 
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/app/mapa_codigos', methods=['GET'])
-def api_mapa_codigos():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith("Bearer gacrux-auth-"): return jsonify({'error': 'No autorizado'}), 401
-    try:
-        db = conectar_bd()
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT i.codigo_barras, i.talla, 
-                   COALESCE(p.talla_t12, 0) as talla_t12, 
-                   COALESCE(p.talla_t16, 0) as talla_t16, 
-                   COALESCE(p.talla_ex_ch, 0) as talla_ex_ch, 
-                   COALESCE(p.talla_ch, 0) as talla_ch, 
-                   COALESCE(p.talla_m, 0) as talla_m, 
-                   COALESCE(p.talla_g, 0) as talla_g, 
-                   COALESCE(p.talla_ex_g, 0) as talla_ex_g,
-                   COALESCE(p.talla_eg, 0) as talla_eg
-            FROM inventario i
-            LEFT JOIN panel_stock p ON 
-                (i.panel_stock_id = p.id) OR 
-                (i.panel_stock_id IS NULL AND i.modelo = p.modelo AND i.estampado = p.estampado AND i.color = p.color)
-        """)
-        res = cursor.fetchall()
-        cursor.close()
-        db.close()
-        
-        mapa = {}
-        t_map = {
-            'T-12': 'talla_t12', 'T-16': 'talla_t16', 'EX CH': 'talla_ex_ch',
-            'CH': 'talla_ch', 'M': 'talla_m', 'G': 'talla_g', 
-            'EG': 'talla_ex_g', 'XG': 'talla_ex_g', 'EX G': 'talla_ex_g'
-        }
-        for r in res:
-            columna = t_map.get(str(r['talla']).upper(), 'talla_ex_g')
-            if columna in r:
-                mapa[r['codigo_barras']] = r[columna]
-            else:
-                mapa[r['codigo_barras']] = r.get('talla_eg', 0)
-            
-        return jsonify(mapa)
-    except Exception as e: 
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/migrar_bd')
-def api_migrar_bd():
-    try:
-        db = conectar_bd()
-        cursor = db.cursor()
-        mensajes = []
-        
-        cursor.execute("SHOW COLUMNS FROM panel_stock LIKE 'genero'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE panel_stock ADD COLUMN genero VARCHAR(50) DEFAULT 'TODO'")
-            cursor.execute("ALTER TABLE panel_stock ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
-            cursor.execute("ALTER TABLE panel_stock ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
-            mensajes.append("✅ Filtros añadidos a panel_stock.")
-            
-        cursor.execute("SHOW COLUMNS FROM inventario LIKE 'genero'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE inventario ADD COLUMN genero VARCHAR(50) DEFAULT 'TODO'")
-            cursor.execute("ALTER TABLE inventario ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
-            cursor.execute("ALTER TABLE inventario ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
-            mensajes.append("✅ Filtros añadidos a inventario.")
-            
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS modelos_base (
-                id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE,
-                genero VARCHAR(50), estilo VARCHAR(50), tipo_prenda VARCHAR(50)
-            )
-        """)
-        cursor.execute("CREATE TABLE IF NOT EXISTS colores_base (id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE)")
-        mensajes.append("✅ Tablas de Autocompletado Creadas.")
-
-        db.commit()
-        cursor.close()
-        db.close()
-        return f"<h1>Migración Gacrux Completada</h1><p>{'<br>'.join(mensajes)}</p>"
-    except Exception as e: return f"<h1>Error Crítico</h1><p>{str(e)}</p>"
-
-# ==============================================================================
-# 🔥 MOTOR DE HOJA MADRE MÓVIL Y GESTOR DE RECETAS EN NUBE 🔥
-# ==============================================================================
 @app.route('/api/app/receta/<modelo>', methods=['GET'])
 def api_get_receta(modelo):
+    db = None
+    cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS recetas_madre (
-                modelo VARCHAR(100) PRIMARY KEY,
-                folio INT DEFAULT 1,
-                colores TEXT,
-                cuerpos TEXT
-            )
-        """)
+        cursor.execute("CREATE TABLE IF NOT EXISTS recetas_madre (modelo VARCHAR(100) PRIMARY KEY, folio INT DEFAULT 1, colores TEXT, cuerpos TEXT)")
         cursor.execute("SELECT * FROM recetas_madre WHERE modelo = %s", (modelo,))
         res = cursor.fetchone()
-        cursor.close()
-        db.close()
-        if res: return jsonify(res)
+        if res: 
+            return jsonify(res)
         return jsonify({})
-    except Exception as e:
+    except Exception as e: 
         return jsonify({})
+    finally:
+        if cursor: cursor.close()
+        if db: db.close()
 
+# ==============================================================================
+# 🔥 MOTOR DE HOJA MADRE MÓVIL BLINDADO Y OPTIMIZADO 🔥
+# ==============================================================================
 @app.route('/api/app/magia_madre', methods=['POST'])
 def api_magia_madre():
     auth_header = request.headers.get('Authorization')
@@ -1039,24 +789,35 @@ def api_magia_madre():
     tallas_usadas = req.get('tallas_usadas', [])
     datos_lienzo_color = req.get('datos_lienzo_color', {})
     folios_a_usar = req.get('folios_a_usar', [])
+    estampados_por_folio = int(req.get('estampados_por_folio', 4))
     
     fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
     str_folios = ", ".join([str(f).zfill(2) for f in folios_a_usar])
 
+    # Variables para el PDF que sobrevivirán al cierre de la Base de Datos
+    imagen_blob = None
+    formato_img = "1500x1900 (Frente)"
+    cuerpos_del_modelo = []
+    datos_inventario_global = []
+    datos_corte = []
+
+    # 1. BLOQUE DE BASE DE DATOS (Se abre y cierra inmediatamente)
+    db = None
+    cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
         
         cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
         row_img = cursor.fetchone()
-        imagen_blob = row_img['imagen_dibujo'] if row_img else None
-        formato_img = row_img['formato_img'] if row_img else "1500x1900 (Frente)"
+        if row_img:
+            imagen_blob = row_img['imagen_dibujo']
+            formato_img = row_img['formato_img'] if row_img['formato_img'] else "1500x1900 (Frente)"
 
         cursor.execute("SELECT cuerpos_ids FROM recetas_madre WHERE modelo = %s", (modelo,))
         row_ids = cursor.fetchone()
         ids_guardados = json.loads(row_ids['cuerpos_ids']) if row_ids and row_ids.get('cuerpos_ids') else []
         
-        cuerpos_del_modelo = []
         if ids_guardados:
             placeholders = ','.join(['%s']*len(ids_guardados))
             cursor.execute(f"SELECT id, nombre, tipo_multiplicador FROM cuerpos_base WHERE id IN ({placeholders})", tuple(ids_guardados))
@@ -1066,9 +827,10 @@ def api_magia_madre():
                     if row['id'] == id_g:
                         cuerpos_del_modelo.append(row)
                         break
-        if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
+                        
+        if not cuerpos_del_modelo: 
+            cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
 
-        datos_corte = []
         for c in colores:
             lienzos = int(datos_lienzo_color.get(c, 0))
             fila = {"color": c, "lienzos": lienzos, "totales_talla": {t: 0 for t in tallas_usadas}, "gran_total": 0}
@@ -1082,19 +844,17 @@ def api_magia_madre():
 
         num_folios = len(folios_a_usar)
         
-        # 🔥 DISTRIBUCIÓN MATEMÁTICA EQUITATIVA (Evita blancos y errores de división) 🔥
-        chunk_size = math.ceil(len(estampados) / num_folios) if num_folios > 0 and len(estampados) > 0 else 1
-        est_por_folio = [estampados[i:i + chunk_size] for i in range(0, len(estampados), chunk_size)]
+        # 🔥 DIVISIÓN MATEMÁTICA CORRECTA PARA PRODUCCIÓN (SEGÚN APP) 🔥
+        est_por_folio = [estampados[i:i + estampados_por_folio] for i in range(0, len(estampados), estampados_por_folio)]
         while len(est_por_folio) < num_folios:
             est_por_folio.append([])
 
-        datos_inventario_global = []
         total_ingresado_nube = 0
         current_global_idx = 1
         mapa_bd = {"T-12": "talla_t12", "T-16": "talla_t16", "EX CH": "talla_ex_ch", "CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX G": "talla_ex_g"}
 
         for i_f, folio_actual in enumerate(folios_a_usar):
-            estampados_del_folio = est_por_folio[i_f]
+            estampados_del_folio = est_por_folio[i_f] if i_f < len(est_por_folio) else []
             estampados_data = []
             
             for est_name in estampados_del_folio:
@@ -1120,7 +880,7 @@ def api_magia_madre():
 
                 for i_e, est_dict in enumerate(estampados_data):
                     fila_inv = {"color": c, "tallas": {}}
-                    for t in tallas_usadas:
+                    for t in tallas_usadas: 
                         fila_inv["tallas"][t] = reparto_por_talla[t][i_e]
                     est_dict["filas"].append(fila_inv)
 
@@ -1171,11 +931,21 @@ def api_magia_madre():
         siguiente_folio = folios_a_usar[-1] + 1
         cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (siguiente_folio, modelo))
         db.commit()
-        cursor.close()
-        db.close()
 
+    except Exception as e:
+        if db: 
+            db.rollback()
+        return jsonify({'error': "Error procesando base de datos: " + str(e)}), 500
+    finally:
+        if cursor: 
+            cursor.close()
+        if db: 
+            db.close()
+
+    # 2. BLOQUE DE PDF (Ya no hay conexión abierta, 0 Riesgo de colapso)
+    try:
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []
         estilos = getSampleStyleSheet()
         estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
@@ -1184,7 +954,8 @@ def api_magia_madre():
             b_io = io.BytesIO(imagen_blob)
             w_img = 220 if "2500" in formato_img else 130
             logo = RLImage(b_io, width=w_img, height=130, kind='proportional')
-        else: logo = ""
+        else: 
+            logo = ""
         
         t_header_corte = Table([
             [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", estilos['Normal']), 
@@ -1201,16 +972,21 @@ def api_magia_madre():
         data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
         
         for c_dict in cuerpos_del_modelo:
-            nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
-            if 'x2' in tipo_mult:
-                txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
-            elif 'A/B' in tipo_mult:
-                txt_cant = "L-A | L-B"; f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
-            else:
-                txt_cant = "1"; f_calc = lambda c: str(c) if c > 0 else ""
+            nombre_p = c_dict['nombre']
+            tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
+            if 'x2' in tipo_mult: 
+                txt_cant = "2"
+                f_calc = lambda c: str(c * 2) if c > 0 else ""
+            elif 'A/B' in tipo_mult: 
+                txt_cant = "L-A | L-B"
+                f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
+            else: 
+                txt_cant = "1"
+                f_calc = lambda c: str(c) if c > 0 else ""
 
             fila = [Paragraph(nombre_p, estilo_wrap), txt_cant]
-            for t in tallas_todas: fila.append(f_calc(int(cuerpos_actuales.get(t, 0))))
+            for t in tallas_todas: 
+                fila.append(f_calc(int(cuerpos_actuales.get(t, 0))))
             data_t1.append(fila)
 
         t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60])
@@ -1222,21 +998,30 @@ def api_magia_madre():
         ]))
 
         data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
-        marcados = []; current_marcado = []; current_sum = 0
+        marcados = []
+        current_marcado = []
+        current_sum = 0
         for d in datos_corte:
             if current_sum + d["lienzos"] > 80 and current_sum > 0:
-                marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
+                marcados.append(current_marcado)
+                current_marcado = [d]
+                current_sum = d["lienzos"]
             else:
-                current_marcado.append(d); current_sum += d["lienzos"]
-        if current_marcado: marcados.append(current_marcado)
+                current_marcado.append(d)
+                current_sum += d["lienzos"]
+        if current_marcado: 
+            marcados.append(current_marcado)
 
-        suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0
+        suma_lienzos = 0
+        suma_tallas = {t: 0 for t in tallas_todas}
+        gran_total = 0
         row_idx = 1
         estilos_tabla2 = [
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,0), colors.black),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
         ]
+        
         for num_m, marcado_data in enumerate(marcados):
             start_row = row_idx
             for i, d in enumerate(marcado_data):
@@ -1250,16 +1035,20 @@ def api_magia_madre():
                 gran_total += d["gran_total"]
                 data_t2.append(fila)
                 row_idx += 1
-            if len(marcado_data) > 1: estilos_tabla2.append(('SPAN', (0, start_row), (0, row_idx - 1)))
+            if len(marcado_data) > 1: 
+                estilos_tabla2.append(('SPAN', (0, start_row), (0, row_idx - 1)))
 
         fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
-        for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
+        for t in tallas_todas: 
+            fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
         fila_final.append(str(gran_total))
         data_t2.append(fila_final)
+        
         estilos_tabla2.extend([
             ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
             ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
         ])
+        
         t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45])
         t2.setStyle(TableStyle(estilos_tabla2))
 
@@ -1273,96 +1062,109 @@ def api_magia_madre():
 
         # 🔥 INVENTARIOS UNIFICADOS COMPACTOS 🔥
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
-        MAX_COLORS = 10
-        color_chunks = [colores[i:i + MAX_COLORS] for i in range(0, len(colores), MAX_COLORS)]
 
         for i_f, data_folio in enumerate(datos_inventario_global):
             folio = data_folio["folio"]
             estampados_data = data_folio["estampados"]
 
-            for chunk_idx, color_chunk in enumerate(color_chunks):
-                estampados_por_hoja = [estampados_data[i:i + 4] for i in range(0, len(estampados_data), 4)]
-                if not estampados_por_hoja:
-                    estampados_por_hoja = [[]]
+            estampados_por_hoja = [estampados_data[i:i + 4] for i in range(0, len(estampados_data), 4)]
+            if not estampados_por_hoja: 
+                estampados_por_hoja = [[]]
+            
+            for lote_idx, lote_estampados in enumerate(estampados_por_hoja):
+                t_header_inv = Table([
+                    [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
+                     Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
+                ], colWidths=[285, 285])
+
+                tablas_estampados = []
+                for est_item in lote_estampados:
+                    est_nombre = est_item["nombre"]
+                    filas_colores = est_item["filas"]
+                    global_idx = est_item["global_idx"]
+                    title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {global_idx}: {est_nombre}</b>"
+                    title = Paragraph(title_text, t_title)
+                    
+                    num_colors = len(colores)
+                    if num_colors <= 6: f_size = 8; pad = 4
+                    elif num_colors <= 10: f_size = 7.5; pad = 3
+                    else: f_size = 6.5; pad = 1
+                        
+                    style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
+                    w_color = 65; w_talla = 22; espacio_total_tabla = 285 
+                    w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
+                    anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
+                    
+                    data_t = [["COLOR", "", ""] + tallas_usadas]
+                    totales_tallas = {t: 0 for t in tallas_usadas}
+
+                    for c in colores:
+                        row_data = next((r for r in filas_colores if r["color"] == c), None)
+                        if row_data:
+                            r_row = [Paragraph(c, style_color_inv_dyn), "", ""]
+                            for t in tallas_usadas:
+                                cant = row_data["tallas"].get(t, 0)
+                                r_row.append(str(cant) if cant > 0 else "")
+                                totales_tallas[t] += cant
+                            data_t.append(r_row)
+
+                    f_tot = ["TOTAL", "", ""]
+                    for t in tallas_usadas: 
+                        f_tot.append(str(totales_tallas[t]))
+                    data_t.append(f_tot)
+
+                    t_inv = Table(data_t, colWidths=anchos_columnas)
+                    t_inv.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
+                        ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
+                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")), 
+                        ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
+                    ]))
+                    
+                    wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285])
+                    wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
+                    tablas_estampados.append(wrapper_table)
+
+                while len(tablas_estampados) < 4: 
+                    tablas_estampados.append("")
+
+                grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
+                t_grid = Table(grid_data, colWidths=[291, 291])
+                t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                 
-                for lote_idx, lote_estampados in enumerate(estampados_por_hoja):
-                    t_header_inv = Table([
-                        [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
-                         Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-                    ], colWidths=[285, 285])
+                firmas_data = [
+                    [" ", " "], [" ", " "], [" ", " "],
+                    ["___________________________________", "___________________________________"],
+                    ["DOBLADO", "ALMACÉN"],
+                    ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
+                ]
+                t_firmas = Table(firmas_data, colWidths=[291, 291])
+                t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
+                
+                # 🔥 AQUI SE MANTIENE LAS FIRMAS AL FONDO Y EL KEEPINFRAME PARA EVITAR SALTO DE HOJA 🔥
+                wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=490, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
+                t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[582], rowHeights=[550, 130]) 
+                t_master.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,1), (0,1), 'BOTTOM'),
+                    ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
+                ]))
+                
+                elementos.append(t_master)
+                
+                if not (i_f == len(datos_inventario_global) - 1 and lote_idx == len(estampados_por_hoja) - 1):
+                    elementos.append(PageBreak())
 
-                    tablas_estampados = []
-                    for est_item in lote_estampados:
-                        est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]; global_idx = est_item["global_idx"]
-                        
-                        title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {global_idx}: {est_nombre}</b>"
-                        if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
-                        title = Paragraph(title_text, t_title)
-                        
-                        num_colors_chunk = len(color_chunk)
-                        if num_colors_chunk <= 6: f_size = 8; pad = 4
-                        elif num_colors_chunk <= 10: f_size = 7.5; pad = 3
-                        else: f_size = 6.5; pad = 1
-                            
-                        style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                        w_color = 65; w_talla = 22; espacio_total_tabla = 285 
-                        w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
-                        anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
-                        
-                        data_t = [["COLOR", "", ""] + tallas_usadas]
-                        totales_tallas = {t: 0 for t in tallas_usadas}
-
-                        for c in color_chunk:
-                            row_data = next((r for r in filas_colores if r["color"] == c), None)
-                            if row_data:
-                                r_row = [Paragraph(c, style_color_inv_dyn), "", ""]
-                                for t in tallas_usadas:
-                                    cant = row_data["tallas"].get(t, 0)
-                                    r_row.append(str(cant) if cant > 0 else "")
-                                    totales_tallas[t] += cant
-                                data_t.append(r_row)
-
-                        f_tot = ["TOTAL", "", ""]
-                        for t in tallas_usadas: f_tot.append(str(totales_tallas[t]))
-                        data_t.append(f_tot)
-
-                        t_inv = Table(data_t, colWidths=anchos_columnas)
-                        t_inv.setStyle(TableStyle([
-                            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
-                            ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
-                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                            ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")), 
-                            ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
-                        ]))
-                        
-                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285])
-                        wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
-                        tablas_estampados.append(wrapper_table)
-
-                    while len(tablas_estampados) < 4: tablas_estampados.append("")
-
-                    grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
-                    t_grid = Table(grid_data, colWidths=[291, 291])
-                    t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
-                    
-                    wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=600, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
-                    elementos.append(wrap_t_grid)
-                    
-                    if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_idx == len(estampados_por_hoja) - 1):
-                        elementos.append(PageBreak())
-
-        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
+        doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
         return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Produccion_{str_folios}.pdf"})
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': "Error dibujando PDF: " + str(e)}), 500
 
-# ==============================================================================
-# HOJA MADRE PEDIDOS (OPTIMIZADA)
-# ==============================================================================
 @app.route('/api/app/magia_pedido', methods=['POST'])
 def api_magia_pedido():
     auth_header = request.headers.get('Authorization')
@@ -1371,21 +1173,33 @@ def api_magia_pedido():
     req = request.get_json()
     modelo = req.get('modelo', '').strip().upper()
     estampados = [e for e in req.get('estampados', []) if e.strip()]
-    if not estampados: estampados = ["SIN ESTAMPADO"]
+    if not estampados: 
+        estampados = ["SIN ESTAMPADO"]
     pedidos_app = req.get('pedidos', {}) 
     folio_arranque = int(req.get('folio_arranque', 1))
     
     fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
 
+    imagen_blob = None
+    formato_img = "1500x1900 (Frente)"
+    cuerpos_del_modelo = []
+    datos_inventario_global = []
+
+    db = None
+    cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
 
-        tallas_activas = set(); colores_activos = set()
+        tallas_activas = set()
+        colores_activos = set()
         for c, t_data in pedidos_app.items():
             for t, cant in t_data.items():
-                if cant > 0: tallas_activas.add(t); colores_activos.add(c)
-        tallas_activas = list(tallas_activas); colores_activos = list(colores_activos)
+                if cant > 0: 
+                    tallas_activas.add(t)
+                    colores_activos.add(c)
+        tallas_activas = list(tallas_activas)
+        colores_activos = list(colores_activos)
         orden_tallas = {"T-12":1, "T-16":2, "EX CH":3, "CH":4, "M":5, "G":6, "EX G":7}
         tallas_activas.sort(key=lambda x: orden_tallas.get(x, 99))
 
@@ -1393,24 +1207,35 @@ def api_magia_pedido():
             return sum(t_data.get(t, 0) for c, t_data in pedidos_app.items() for t in grupo)
 
         def calcular_desperdicio(grupo_tallas):
-            best_waste = float('inf'); best_lienzos_total = float('inf')
-            best_cuerpos = {}; best_lienzos_color = {}
+            best_waste = float('inf')
+            best_lienzos_total = float('inf')
+            best_cuerpos = {}
+            best_lienzos_color = {}
+            
             def get_combos(n, current_sum=0):
                 if n == 1: return [[i] for i in range(1, 7 - current_sum)]
                 combos = []
                 for i in range(1, 7 - current_sum - (n-1) + 1):
-                    for rest in get_combos(n-1, current_sum + i): combos.append([i] + rest)
+                    for rest in get_combos(n-1, current_sum + i): 
+                        combos.append([i] + rest)
                 return combos
                 
             for combo in get_combos(len(grupo_tallas)):
                 cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
-                lienzos_color = {}; waste = 0; tot_l = 0
+                lienzos_color = {}
+                waste = 0
+                tot_l = 0
                 for c, peds in pedidos_app.items():
                     req_lienzos = max((math.ceil(peds.get(t, 0) / cuerpos[t]) for t in grupo_tallas if peds.get(t, 0) > 0), default=0)
-                    lienzos_color[c] = req_lienzos; tot_l += req_lienzos
-                    for t in grupo_tallas: waste += (req_lienzos * cuerpos[t]) - peds.get(t, 0)
+                    lienzos_color[c] = req_lienzos
+                    tot_l += req_lienzos
+                    for t in grupo_tallas: 
+                        waste += (req_lienzos * cuerpos[t]) - peds.get(t, 0)
                 if tot_l < best_lienzos_total or (tot_l == best_lienzos_total and waste < best_waste):
-                    best_lienzos_total = tot_l; best_waste = waste; best_cuerpos = cuerpos; best_lienzos_color = lienzos_color
+                    best_lienzos_total = tot_l
+                    best_waste = waste
+                    best_cuerpos = cuerpos
+                    best_lienzos_color = lienzos_color
             return best_waste, best_lienzos_total, best_cuerpos, best_lienzos_color
 
         def evaluar_grupo_de_3(grupo_3):
@@ -1418,42 +1243,61 @@ def api_magia_pedido():
             tot_ped = total_pedido_grupo(grupo_3)
             if tot_ped <= 30: return [(grupo_3, c_all, lc_all)]
             if w_all > (tot_ped * 0.50):
-                best_split_lienzos = float('inf'); best_split_waste = float('inf'); best_split = None
+                best_split_lienzos = float('inf')
+                best_split_waste = float('inf')
+                best_split = None
                 for i in range(3):
-                    single = [grupo_3[i]]; pair = [grupo_3[j] for j in range(3) if j != i]
+                    single = [grupo_3[i]]
+                    pair = [grupo_3[j] for j in range(3) if j != i]
                     ws, ls, cs, lcs = calcular_desperdicio(single)
                     wp, lp, cp, lcp = calcular_desperdicio(pair)
                     if (ls + lp) < best_split_lienzos or ((ls + lp) == best_split_lienzos and (ws + wp) < best_split_waste):
-                        best_split_lienzos = ls + lp; best_split_waste = ws + wp; best_split = [(single, cs, lcs), (pair, cp, lcp)]
-                if best_split_lienzos < l_all or (best_split_lienzos == l_all and best_split_waste < w_all): return best_split
+                        best_split_lienzos = ls + lp
+                        best_split_waste = ws + wp
+                        best_split = [(single, cs, lcs), (pair, cp, lcp)]
+                if best_split_lienzos < l_all or (best_split_lienzos == l_all and best_split_waste < w_all): 
+                    return best_split
             return [(grupo_3, c_all, lc_all)]
 
-        particiones = []; n_tallas = len(tallas_activas)
-        if n_tallas <= 2: w, tl, c, l = calcular_desperdicio(tallas_activas); particiones.append((tallas_activas, c, l))
-        elif n_tallas == 3: particiones.extend(evaluar_grupo_de_3(tallas_activas))
+        particiones = []
+        n_tallas = len(tallas_activas)
+        if n_tallas <= 2: 
+            w, tl, c, l = calcular_desperdicio(tallas_activas)
+            particiones.append((tallas_activas, c, l))
+        elif n_tallas == 3: 
+            particiones.extend(evaluar_grupo_de_3(tallas_activas))
         elif n_tallas == 4:
             g1, g2 = tallas_activas[0:2], tallas_activas[2:4]
-            w1, tl1, c1, l1 = calcular_desperdicio(g1); particiones.append((g1, c1, l1))
-            w2, tl2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
+            w1, tl1, c1, l1 = calcular_desperdicio(g1)
+            particiones.append((g1, c1, l1))
+            w2, tl2, c2, l2 = calcular_desperdicio(g2)
+            particiones.append((g2, c2, l2))
         elif n_tallas == 5:
             particiones.extend(evaluar_grupo_de_3(tallas_activas[0:3]))
-            w2, tl2, c2, l2 = calcular_desperdicio(tallas_activas[3:5]); particiones.append((tallas_activas[3:5], c2, l2))
+            w2, tl2, c2, l2 = calcular_desperdicio(tallas_activas[3:5])
+            particiones.append((tallas_activas[3:5], c2, l2))
         elif n_tallas == 6:
-            for i in range(0, 6, 2): g = tallas_activas[i:i+2]; w, tl, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
+            for i in range(0, 6, 2): 
+                g = tallas_activas[i:i+2]
+                w, tl, c, l = calcular_desperdicio(g)
+                particiones.append((g, c, l))
         elif n_tallas == 7:
             particiones.extend(evaluar_grupo_de_3(tallas_activas[0:3]))
-            for i in range(3, 7, 2): g = tallas_activas[i:i+2]; w, tl, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
+            for i in range(3, 7, 2): 
+                g = tallas_activas[i:i+2]
+                w, tl, c, l = calcular_desperdicio(g)
+                particiones.append((g, c, l))
 
         cursor.execute("SELECT imagen_dibujo, formato_img FROM modelos_base WHERE nombre = %s", (modelo,))
         row_img = cursor.fetchone()
-        imagen_blob = row_img['imagen_dibujo'] if row_img else None
-        formato_img = row_img['formato_img'] if row_img else "1500x1900 (Frente)"
+        if row_img:
+            imagen_blob = row_img['imagen_dibujo']
+            formato_img = row_img['formato_img'] if row_img['formato_img'] else "1500x1900 (Frente)"
 
         cursor.execute("SELECT cuerpos_ids FROM recetas_madre WHERE modelo = %s", (modelo,))
         row_ids = cursor.fetchone()
         ids_guardados = json.loads(row_ids['cuerpos_ids']) if row_ids and row_ids.get('cuerpos_ids') else []
         
-        cuerpos_del_modelo = []
         if ids_guardados:
             placeholders = ','.join(['%s']*len(ids_guardados))
             cursor.execute(f"SELECT id, nombre, tipo_multiplicador FROM cuerpos_base WHERE id IN ({placeholders})", tuple(ids_guardados))
@@ -1463,10 +1307,89 @@ def api_magia_pedido():
                     if row['id'] == id_g:
                         cuerpos_del_modelo.append(row)
                         break
-        if not cuerpos_del_modelo: cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
+        if not cuerpos_del_modelo: 
+            cuerpos_del_modelo = [{'nombre': 'PIEZA GENÉRICA (Falta Configurar)', 'tipo_multiplicador': 'x1 (Normal)'}]
 
+        total_prod = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
+        for particion in particiones:
+            grupo_tallas, cuerpos_dict, lienzos = particion
+            for c, l_cant in lienzos.items():
+                for t in grupo_tallas: 
+                    total_prod[c][t] += l_cant * cuerpos_dict.get(t, 0)
+
+        num_est = len(estampados)
+        total_ingresado_nube = 0
+        mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
+
+        for i_e, est in enumerate(estampados):
+            for c in colores_activos:
+                for t in tallas_activas:
+                    prod = total_prod[c][t]
+                    ped = pedidos_app.get(c, {}).get(t, 0)
+                    
+                    base_prod = prod // num_est
+                    sobra_prod = prod % num_est
+                    prod_est = base_prod + 1 if i_e < sobra_prod else base_prod
+                    
+                    base_ped = ped // num_est
+                    sobra_ped = ped % num_est
+                    ped_est = base_ped + 1 if i_e < sobra_ped else base_ped
+                    
+                    sob_est = max(0, prod_est - ped_est)
+                    
+                    if sob_est > 0:
+                        modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" 
+                        col_sql = mapa_bd.get(t, "talla_ex_g")
+                        
+                        cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, est, c))
+                        res = cursor.fetchone()
+                        
+                        v_stock = {"talla_t12":0, "talla_t16":0, "talla_ex_ch":0, "talla_ch":0, "talla_m":0, "talla_g":0, "talla_ex_g":0}
+                        v_stock[col_sql] = sob_est
+                        
+                        if res:
+                            cursor.execute("""
+                                UPDATE panel_stock 
+                                SET talla_t12=talla_t12+%s, talla_t16=talla_t16+%s, talla_ex_ch=talla_ex_ch+%s, 
+                                    talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_ex_g=talla_ex_g+%s 
+                                WHERE id=%s
+                            """, (v_stock["talla_t12"], v_stock["talla_t16"], v_stock["talla_ex_ch"], v_stock["talla_ch"], v_stock["talla_m"], v_stock["talla_g"], v_stock["talla_ex_g"], res['id']))
+                            panel_id = res['id']
+                        else:
+                            cursor.execute("""
+                                INSERT INTO panel_stock (modelo, estampado, color, talla_t12, talla_t16, talla_ex_ch, talla_ch, talla_m, talla_g, talla_ex_g, genero, estilo, tipo_prenda) 
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'TODO', 'NORMAL', 'SUDADERA')
+                            """, (modelo_folio_nube, est, c, v_stock["talla_t12"], v_stock["talla_t16"], v_stock["talla_ex_ch"], v_stock["talla_ch"], v_stock["talla_m"], v_stock["talla_g"], v_stock["talla_ex_g"]))
+                            panel_id = cursor.lastrowid
+
+                        cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, est, c, t))
+                        if not cursor.fetchone():
+                            cod = generar_codigo_13_nube(cursor, modelo_folio_nube, est, c, t)
+                            cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
+                                           (cod, modelo_folio_nube, est, c, t, panel_id))
+                        total_ingresado_nube += sob_est
+
+        if total_ingresado_nube > 0:
+            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
+                           (modelo, total_ingresado_nube, fecha_txt))
+                           
+        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
+        db.commit()
+
+    except Exception as e:
+        if db: 
+            db.rollback()
+        return jsonify({'error': "Error de base de datos: " + str(e)}), 500
+    finally:
+        if cursor: 
+            cursor.close()
+        if db: 
+            db.close()
+
+    # 🔥 GENERACIÓN DE PDF SEPARADA PARA EVITAR CONGELAMIENTO 🔥
+    try:
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=20, rightMargin=20, topMargin=70, bottomMargin=80)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []
         estilos = getSampleStyleSheet()
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
@@ -1476,15 +1399,14 @@ def api_magia_pedido():
             b_io = io.BytesIO(imagen_blob)
             w_img = 220 if "2500" in formato_img else 130
             logo = RLImage(b_io, width=w_img, height=130, kind='proportional')
-        else: logo = ""
+        else: 
+            logo = ""
 
         folio_actual = folio_arranque 
-        talla_a_folio = {}
 
         # 1. DIBUJAR HOJAS DE CORTE
         for particion in particiones:
             grupo_tallas, cuerpos, lienzos = particion
-            for t in grupo_tallas: talla_a_folio[t] = str(folio_actual).zfill(2)
             
             t_header_corte = Table([
                 [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", style_header_corte), 
@@ -1494,22 +1416,28 @@ def api_magia_pedido():
             ], colWidths=[185, 185, 185], rowHeights=[20, 135])
             t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
             
-            elementos.append(t_header_corte); elementos.append(Spacer(1, 10))
+            elementos.append(t_header_corte)
+            elementos.append(Spacer(1, 10))
             
             tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
             data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
             
             for c_dict in cuerpos_del_modelo:
-                nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
+                nombre_p = c_dict['nombre']
+                tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
                 if 'x2' in tipo_mult:
-                    txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
+                    txt_cant = "2"
+                    f_calc = lambda c: str(c * 2) if c > 0 else ""
                 elif 'A/B' in tipo_mult:
-                    txt_cant = "L-A | L-B"; f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
+                    txt_cant = "L-A | L-B"
+                    f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
                 else:
-                    txt_cant = "1"; f_calc = lambda c: str(c) if c > 0 else ""
+                    txt_cant = "1"
+                    f_calc = lambda c: str(c) if c > 0 else ""
 
                 fila = [Paragraph(nombre_p, estilo_wrap), txt_cant]
-                for t in tallas_todas: fila.append(f_calc(cuerpos.get(t, 0)))
+                for t in tallas_todas: 
+                    fila.append(f_calc(cuerpos.get(t, 0)))
                 data_t1.append(fila)
 
             t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60])
@@ -1521,19 +1449,29 @@ def api_magia_pedido():
             ]))
 
             data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
-            suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; idx_color = 0
+            suma_lienzos = 0
+            suma_tallas = {t: 0 for t in tallas_todas}
+            gran_total = 0
+            idx_color = 0
             for c, l_cant in lienzos.items():
                 if l_cant == 0: continue
-                fila = ["Marcado\n1" if idx_color == 0 else "", Paragraph(c, estilo_wrap), str(l_cant)]; suma_lienzos += l_cant
+                fila = ["Marcado\n1" if idx_color == 0 else "", Paragraph(c, estilo_wrap), str(l_cant)]
+                suma_lienzos += l_cant
                 for t in tallas_todas:
                     prod = l_cant * cuerpos.get(t, 0)
-                    fila.append(str(prod) if prod > 0 else ""); suma_tallas[t] += prod
+                    fila.append(str(prod) if prod > 0 else "")
+                    suma_tallas[t] += prod
                 tot_fila = sum(l_cant * cuerpos.get(tx, 0) for tx in grupo_tallas)
-                fila.append(str(tot_fila)); gran_total += tot_fila; data_t2.append(fila); idx_color += 1
+                fila.append(str(tot_fila))
+                gran_total += tot_fila
+                data_t2.append(fila)
+                idx_color += 1
 
             fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
-            for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
-            fila_final.append(str(gran_total)); data_t2.append(fila_final)
+            for t in tallas_todas: 
+                fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
+            fila_final.append(str(gran_total))
+            data_t2.append(fila_final)
             
             t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45])
             t2.setStyle(TableStyle([
@@ -1551,20 +1489,9 @@ def api_magia_pedido():
             elementos.append(tablas_encogibles)
             elementos.append(PageBreak())
 
-        # 2. CALCULAR INVENTARIO UNIFICADO
-        total_prod = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
-        for particion in particiones:
-            grupo_tallas, cuerpos_dict, lienzos = particion
-            for c, l_cant in lienzos.items():
-                for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos_dict.get(t, 0)
-
-        # 3. DIBUJAR INVENTARIOS UNIFICADOS (CHUNKING)
+        # 3. DIBUJAR INVENTARIOS UNIFICADOS
         t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         
-        num_est = len(estampados)
-        total_ingresado_nube = 0
-        mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
-
         MAX_COLORS = 10
         color_chunks = [colores_activos[i:i + MAX_COLORS] for i in range(0, len(colores_activos), MAX_COLORS)]
 
@@ -1591,20 +1518,28 @@ def api_magia_pedido():
                 w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
                 anchos = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                 
-                data_tot = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
-                data_ped = [["COLOR", "", ""] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
-                data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
+                data_tot = [["COLOR", "", ""] + tallas_activas]
+                sum_tot = {t: 0 for t in tallas_activas}
+                data_ped = [["COLOR", "", ""] + tallas_activas]
+                sum_ped = {t: 0 for t in tallas_activas}
+                data_sob = [["COLOR", "", ""] + tallas_activas]
+                sum_sob = {t: 0 for t in tallas_activas}
                 
                 for c in color_chunk:
-                    r_tot = [Paragraph(c, style_color_inv), "", ""]; r_ped = [Paragraph(c, style_color_inv), "", ""]; r_sob = [Paragraph(c, style_color_inv), "", ""]
+                    r_tot = [Paragraph(c, style_color_inv), "", ""]
+                    r_ped = [Paragraph(c, style_color_inv), "", ""]
+                    r_sob = [Paragraph(c, style_color_inv), "", ""]
+                    
                     for t in tallas_activas:
                         prod = total_prod[c][t]
                         ped = pedidos_app.get(c, {}).get(t, 0)
                         
-                        base_prod = prod // num_est; sobra_prod = prod % num_est
+                        base_prod = prod // num_est
+                        sobra_prod = prod % num_est
                         prod_est = base_prod + 1 if i_e < sobra_prod else base_prod
                         
-                        base_ped = ped // num_est; sobra_ped = ped % num_est
+                        base_ped = ped // num_est
+                        sobra_ped = ped % num_est
                         ped_est = base_ped + 1 if i_e < sobra_ped else base_ped
                         
                         sob_est = max(0, prod_est - ped_est)
@@ -1613,42 +1548,13 @@ def api_magia_pedido():
                         r_ped.append(str(ped_est) if ped_est>0 else "-")
                         r_sob.append(str(sob_est) if sob_est>0 else "-")
                         
-                        sum_tot[t] += prod_est; sum_ped[t] += ped_est; sum_sob[t] += sob_est
-                        
-                        # INYECCIÓN A LA NUBE (SOLO SOBRANTES)
-                        if sob_est > 0:
-                            modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" 
-                            col_sql = mapa_bd.get(t, "talla_ex_g")
-                            
-                            cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, est, c))
-                            res = cursor.fetchone()
-                            
-                            v_stock = {"talla_t12":0, "talla_t16":0, "talla_ex_ch":0, "talla_ch":0, "talla_m":0, "talla_g":0, "talla_ex_g":0}
-                            v_stock[col_sql] = sob_est
-                            
-                            if res:
-                                cursor.execute("""
-                                    UPDATE panel_stock 
-                                    SET talla_t12=talla_t12+%s, talla_t16=talla_t16+%s, talla_ex_ch=talla_ex_ch+%s, 
-                                        talla_ch=talla_ch+%s, talla_m=talla_m+%s, talla_g=talla_g+%s, talla_ex_g=talla_ex_g+%s 
-                                    WHERE id=%s
-                                """, (v_stock["talla_t12"], v_stock["talla_t16"], v_stock["talla_ex_ch"], v_stock["talla_ch"], v_stock["talla_m"], v_stock["talla_g"], v_stock["talla_ex_g"], res['id']))
-                                panel_id = res['id']
-                            else:
-                                cursor.execute("""
-                                    INSERT INTO panel_stock (modelo, estampado, color, talla_t12, talla_t16, talla_ex_ch, talla_ch, talla_m, talla_g, talla_ex_g, genero, estilo, tipo_prenda) 
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'TODO', 'NORMAL', 'SUDADERA')
-                                """, (modelo_folio_nube, est, c, v_stock["talla_t12"], v_stock["talla_t16"], v_stock["talla_ex_ch"], v_stock["talla_ch"], v_stock["talla_m"], v_stock["talla_g"], v_stock["talla_ex_g"]))
-                                panel_id = cursor.lastrowid
+                        sum_tot[t] += prod_est
+                        sum_ped[t] += ped_est
+                        sum_sob[t] += sob_est
 
-                            cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, est, c, t))
-                            if not cursor.fetchone():
-                                cod = generar_codigo_13_nube(cursor, modelo_folio_nube, est, c, t)
-                                cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
-                                               (cod, modelo_folio_nube, est, c, t, panel_id))
-                            total_ingresado_nube += sob_est
-                    
-                    data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
+                    data_tot.append(r_tot)
+                    data_ped.append(r_ped)
+                    data_sob.append(r_sob)
                 
                 data_tot.append(["SUMA", "", ""] + [str(sum_tot[t]) for t in tallas_activas])
                 data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
@@ -1662,6 +1568,7 @@ def api_magia_pedido():
                     ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")),
                     ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                 ])
+                
                 t_tot = Table(data_tot, colWidths=anchos); t_tot.setStyle(style_tabla_3)
                 t_ped = Table(data_ped, colWidths=anchos); t_ped.setStyle(style_tabla_3)
                 t_sob = Table(data_sob, colWidths=anchos); t_sob.setStyle(style_tabla_3)
@@ -1678,29 +1585,36 @@ def api_magia_pedido():
                 t_grid = Table(grid_data, colWidths=[291, 291])
                 t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                 
-                wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=600, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
-                elementos.append(wrap_t_grid)
+                firmas_data = [
+                    [" ", " "], [" ", " "], [" ", " "],
+                    ["___________________________________", "___________________________________"],
+                    ["DOBLADO", "ALMACÉN"],
+                    ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
+                ]
+                t_firmas = Table(firmas_data, colWidths=[291, 291])
+                t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
+                
+                wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=490, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
+                t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[582], rowHeights=[550, 130]) 
+                t_master.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,1), (0,1), 'BOTTOM'),
+                    ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
+                ]))
+                
+                elementos.append(t_master)
                 
                 if not (i_e == len(estampados) - 1 and chunk_idx == len(color_chunks) - 1):
                     elementos.append(PageBreak())
 
-        if total_ingresado_nube > 0:
-            cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
-                           (modelo, total_ingresado_nube, fecha_txt))
-                           
-        cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
-        db.commit()
-        cursor.close()
-        db.close()
-
-        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
+        doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
         return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf", 'siguiente_folio': folio_arranque + 1})
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': "Error dibujando PDF: " + str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
