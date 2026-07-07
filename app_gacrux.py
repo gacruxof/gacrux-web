@@ -870,7 +870,7 @@ def api_magia_madre():
 
         # 🔥 PASO 2: DIBUJO DEL PDF 🔥
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=90, bottomMargin=15)
         elementos = []; estilos = getSampleStyleSheet()
         estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
         style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
@@ -889,26 +889,29 @@ def api_magia_madre():
                 img.thumbnail((300, 300))
                 temp_io = io.BytesIO()
                 img.save(temp_io, format='PNG')
-                temp_io.seek(0)
-                
+                temp_io_bytes = temp_io.getvalue()
                 w_img = 220 if "2500" in formato_img else 130
-                logo = RLImage(temp_io, width=w_img, height=130, kind='proportional')
             except Exception as e:
-                logo = ""
+                temp_io_bytes = None
+        else: temp_io_bytes = None
+
+        # 1. DIBUJAR HOJAS DE CORTE
+        if temp_io_bytes: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
         else: logo = ""
 
-        # 1. DIBUJAR HOJAS DE CORTE (UNA SOLA VEZ, SIN DUPLICAR)
         t_header_corte = Table([
             [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", style_header_corte), 
              Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
              Paragraph(f"<font color='red'><b>FOLIO:</b> {str_folios}</font>", ParagraphStyle(name='hr', alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12))],
             [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
-        ], colWidths=[190, 190, 190], rowHeights=[None, 135], hAlign='CENTER')
+        ], colWidths=[194, 194, 194], rowHeights=[None, 135], hAlign='CENTER')
         t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
         elementos.append(t_header_corte); elementos.append(Spacer(1, 10))
 
-        tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
-        data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
+        tallas_todas = tallas_usadas
+        w_talla_corte = 432 / max(1, len(tallas_todas))
+        
+        data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS"] + [""] * (len(tallas_todas) - 1), ["", ""] + tallas_todas]
         for c_dict in cuerpos_del_modelo:
             nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
             if 'x2' in tipo_mult: txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
@@ -918,7 +921,7 @@ def api_magia_madre():
             for t in tallas_todas: fila.append(f_calc(safe_int(cuerpos_actuales.get(t, 0))))
             data_t1.append(fila)
 
-        t1 = Table(data_t1, colWidths=[80, 70] + [60] * 7, hAlign='CENTER')
+        t1 = Table(data_t1, colWidths=[80, 70] + [w_talla_corte] * len(tallas_todas), hAlign='CENTER')
         t1.setStyle(TableStyle([
             ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
             ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
@@ -957,10 +960,12 @@ def api_magia_madre():
             ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
             ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
         ])
-        t2 = Table(data_t2, colWidths=[55, 90, 45, 47, 47, 47, 47, 47, 47, 47, 51], hAlign='CENTER')
+        
+        w_talla_rollo = 337 / max(1, len(tallas_todas))
+        t2 = Table(data_t2, colWidths=[55, 90, 50] + [w_talla_rollo] * len(tallas_todas) + [50], hAlign='CENTER')
         t2.setStyle(TableStyle(estilos_tabla2))
 
-        tablas_encogibles = KeepInFrame(maxWidth=570, maxHeight=500, content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], mode='shrink', vAlign='TOP')
+        tablas_encogibles = KeepInFrame(maxWidth=582, maxHeight=500, content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], mode='shrink', vAlign='TOP', hAlign='CENTER')
         elementos.append(tablas_encogibles); elementos.append(PageBreak())
 
         # 2. DIBUJAR INVENTARIOS UNIFICADOS
@@ -978,7 +983,7 @@ def api_magia_madre():
                     t_header_inv = Table([
                         [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
                          Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-                    ], colWidths=[285, 285], hAlign='CENTER')
+                    ], colWidths=[291, 291], hAlign='CENTER')
 
                     tablas_estampados = []
                     for est_item in lote_estampados:
@@ -993,7 +998,7 @@ def api_magia_madre():
                         else: f_size = 6.5; pad = 1
                             
                         style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                        w_color = 65; w_talla = 20; espacio_total_tabla = 275
+                        w_color = 65; w_talla = 20; espacio_total_tabla = 285
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
                         
@@ -1020,14 +1025,14 @@ def api_magia_madre():
                             ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                         ]))
                         
-                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[275], hAlign='CENTER')
+                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285], hAlign='CENTER')
                         wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
                         tablas_estampados.append(wrapper_table)
 
                     while len(tablas_estampados) < 4: tablas_estampados.append("")
 
                     grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
-                    t_grid = Table(grid_data, colWidths=[285, 285], hAlign='CENTER')
+                    t_grid = Table(grid_data, colWidths=[291, 291], hAlign='CENTER')
                     t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                     
                     firmas_data = [
@@ -1036,13 +1041,14 @@ def api_magia_madre():
                         ["DOBLADO", "ALMACÉN"],
                         ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
                     ]
-                    t_firmas = Table(firmas_data, colWidths=[285, 285], hAlign='CENTER')
+                    t_firmas = Table(firmas_data, colWidths=[291, 291], hAlign='CENTER')
                     t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
                     
-                    wrap_t_grid = KeepInFrame(maxWidth=570, maxHeight=490, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
-                    t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[570], rowHeights=[550, 110], hAlign='CENTER') 
+                    wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=490, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP', hAlign='CENTER')
+                    t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[582], rowHeights=[550, 110], hAlign='CENTER') 
                     t_master.setStyle(TableStyle([
                         ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,1), (0,1), 'BOTTOM'),
+                        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                         ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
                         ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
                     ]))
@@ -1082,7 +1088,8 @@ def api_magia_pedido():
         orden_tallas = {"T-12":1, "T-16":2, "EX CH":3, "CH":4, "M":5, "G":6, "EX G":7}
         tallas_activas.sort(key=lambda x: orden_tallas.get(x, 99))
 
-        def total_pedido_grupo(grupo): return sum(safe_int(t_data.get(t, 0)) for c, t_data in pedidos_app.items() for t in grupo)
+        def total_pedido_grupo(grupo): 
+            return sum(safe_int(t_data.get(t, 0)) for c, t_data in pedidos_app.items() for t in grupo)
 
         def calcular_desperdicio(grupo_tallas):
             best_waste = float('inf'); best_lienzos_total = float('inf'); best_cuerpos = {}; best_lienzos_color = {}
@@ -1092,7 +1099,11 @@ def api_magia_pedido():
                 for i in range(1, 7 - current_sum - (n-1) + 1):
                     for rest in get_combos(n-1, current_sum + i): combos.append([i] + rest)
                 return combos
-            for combo in get_combos(len(grupo_tallas)):
+            
+            combos = get_combos(len(grupo_tallas))
+            if not combos: return float('inf'), float('inf'), {}, {}
+            
+            for combo in combos:
                 cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
                 lienzos_color = {}; waste = 0; tot_l = 0
                 for c, peds in pedidos_app.items():
@@ -1103,34 +1114,24 @@ def api_magia_pedido():
                     best_lienzos_total = tot_l; best_waste = waste; best_cuerpos = cuerpos; best_lienzos_color = lienzos_color
             return best_waste, best_lienzos_total, best_cuerpos, best_lienzos_color
 
-        def evaluar_grupo_de_3(grupo_3):
-            w_all, l_all, c_all, lc_all = calcular_desperdicio(grupo_3); tot_ped = total_pedido_grupo(grupo_3)
-            if tot_ped <= 30: return [(grupo_3, c_all, lc_all)]
-            if w_all > (tot_ped * 0.50):
-                best_split_lienzos = float('inf'); best_split_waste = float('inf'); best_split = None
-                for i in range(3):
-                    single = [grupo_3[i]]; pair = [grupo_3[j] for j in range(3) if j != i]
-                    ws, ls, cs, lcs = calcular_desperdicio(single); wp, lp, cp, lcp = calcular_desperdicio(pair)
-                    if (ls + lp) < best_split_lienzos or ((ls + lp) == best_split_lienzos and (ws + wp) < best_split_waste):
-                        best_split_lienzos = ls + lp; best_split_waste = ws + wp; best_split = [(single, cs, lcs), (pair, cp, lcp)]
-                if best_split_lienzos < l_all or (best_split_lienzos == l_all and best_split_waste < w_all): return best_split
-            return [(grupo_3, c_all, lc_all)]
+        # 🔥 LA NUEVA IA: EVALÚA, DECIDE Y PARTE TALLAS AUTOMÁTICAMENTE 🔥
+        def particionar_tallas(grupo):
+            if len(grupo) <= 2:
+                w, tl, c, l = calcular_desperdicio(grupo)
+                return [(grupo, c, l)]
+            
+            if len(grupo) <= 6:
+                w, tl, c, l = calcular_desperdicio(grupo)
+                tot_ped = total_pedido_grupo(grupo)
+                # Si el desperdicio es aceptable o son poquitas prendas, no divide
+                if tot_ped <= 30 or w <= (tot_ped * 0.50):
+                    return [(grupo, c, l)]
+            
+            # Si excede el 50% de desperdicio o son más de 6 tallas, se parte a la mitad inteligentemente
+            mid = len(grupo) // 2
+            return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
 
-        particiones = []; n_tallas = len(tallas_activas)
-        if n_tallas <= 2: w, tl, c, l = calcular_desperdicio(tallas_activas); particiones.append((tallas_activas, c, l))
-        elif n_tallas == 3: particiones.extend(evaluar_grupo_de_3(tallas_activas))
-        elif n_tallas == 4:
-            g1, g2 = tallas_activas[0:2], tallas_activas[2:4]
-            w1, tl1, c1, l1 = calcular_desperdicio(g1); particiones.append((g1, c1, l1))
-            w2, tl2, c2, l2 = calcular_desperdicio(g2); particiones.append((g2, c2, l2))
-        elif n_tallas == 5:
-            particiones.extend(evaluar_grupo_de_3(tallas_activas[0:3]))
-            w2, tl2, c2, l2 = calcular_desperdicio(tallas_activas[3:5]); particiones.append((tallas_activas[3:5], c2, l2))
-        elif n_tallas == 6:
-            for i in range(0, 6, 2): g = tallas_activas[i:i+2]; w, tl, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
-        elif n_tallas == 7:
-            particiones.extend(evaluar_grupo_de_3(tallas_activas[0:3]))
-            for i in range(3, 7, 2): g = tallas_activas[i:i+2]; w, tl, c, l = calcular_desperdicio(g); particiones.append((g, c, l))
+        particiones = particionar_tallas(tallas_activas)
 
         est_por_folio_raw = [raw_estampados[i:i + estampados_por_folio] for i in range(0, len(raw_estampados), estampados_por_folio)]
         est_por_folio = []; estampados = []
@@ -1235,7 +1236,7 @@ def api_magia_pedido():
                     for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos_dict.get(t, 0)
 
             buffer = io.BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
+            doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=90, bottomMargin=15)
             elementos = []; estilos = getSampleStyleSheet()
             estilo_wrap = ParagraphStyle(name='Wrap', alignment=TA_CENTER, fontName='Helvetica', fontSize=9, leading=10)
             style_header_corte = ParagraphStyle(name='hc', fontName='Helvetica-Bold', fontSize=12)
@@ -1254,30 +1255,33 @@ def api_magia_pedido():
                     img.thumbnail((300, 300))
                     temp_io = io.BytesIO()
                     img.save(temp_io, format='PNG')
-                    temp_io.seek(0)
-                    
+                    temp_io_bytes = temp_io.getvalue()
                     w_img = 220 if "2500" in formato_img else 130
-                    logo = RLImage(temp_io, width=w_img, height=130, kind='proportional')
-                except: logo = ""
-            else: logo = ""
-
-            folio_actual = folio_arranque 
+                except: temp_io_bytes = None
+            else: temp_io_bytes = None
 
             # 1. DIBUJAR HOJAS DE CORTE
             for particion in particiones:
                 grupo_tallas, cuerpos, lienzos = particion
+                
+                # RECREAR LA IMAGEN EN CADA HOJA DE CORTE PARA EVITAR COLAPSO DE REPORTLAB
+                if temp_io_bytes: logo = RLImage(io.BytesIO(temp_io_bytes), width=w_img, height=130, kind='proportional')
+                else: logo = ""
+
                 t_header_corte = Table([
                     [Paragraph(f"<font color='red'><b>MODELO:</b> {modelo}</font>", style_header_corte), 
                      Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
                      Paragraph(f"<font color='red'><b>FOLIO:</b> {str(folio_arranque).zfill(2)} (PEDIDO)</font>", style_header_corte)],
                     [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
-                ], colWidths=[190, 190, 190], rowHeights=[None, 135], hAlign='CENTER')
+                ], colWidths=[194, 194, 194], rowHeights=[None, 135], hAlign='CENTER')
                 t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
                 
                 elementos.append(t_header_corte); elementos.append(Spacer(1, 10))
-                tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
-                data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
                 
+                tallas_todas = grupo_tallas
+                w_talla_corte = 432 / max(1, len(tallas_todas))
+                
+                data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS"] + [""] * (len(tallas_todas) - 1), ["", ""] + tallas_todas]
                 for c_dict in cuerpos_del_modelo:
                     nombre_p = c_dict['nombre']; tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
                     if 'x2' in tipo_mult: txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
@@ -1288,7 +1292,7 @@ def api_magia_pedido():
                     for t in tallas_todas: fila.append(f_calc(cuerpos.get(t, 0)))
                     data_t1.append(fila)
 
-                t1 = Table(data_t1, colWidths=[80, 70] + [60] * 7, hAlign='CENTER')
+                t1 = Table(data_t1, colWidths=[80, 70] + [w_talla_corte] * len(tallas_todas), hAlign='CENTER')
                 t1.setStyle(TableStyle([
                     ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
                     ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#fef3c7")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
@@ -1298,10 +1302,16 @@ def api_magia_pedido():
 
                 data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
                 marcados = []; current_marcado = []; current_sum = 0
-                for d in datos_corte:
-                    if current_sum + d["lienzos"] > 80 and current_sum > 0:
-                        marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
-                    else: current_marcado.append(d); current_sum += d["lienzos"]
+                for c in colores_activos:
+                    l_cant = lienzos.get(c, 0)
+                    if l_cant > 0:
+                        totales_t = {t: l_cant * cuerpos.get(t, 0) for t in tallas_todas}
+                        g_tot = sum(totales_t.values())
+                        d = {"color": c, "lienzos": l_cant, "totales_talla": totales_t, "gran_total": g_tot}
+                        if current_sum + l_cant > 80 and current_sum > 0:
+                            marcados.append(current_marcado); current_marcado = [d]; current_sum = l_cant
+                        else:
+                            current_marcado.append(d); current_sum += l_cant
                 if current_marcado: marcados.append(current_marcado)
 
                 suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; row_idx = 1
@@ -1327,13 +1337,15 @@ def api_magia_pedido():
                     ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
                     ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
                 ])
-                t2 = Table(data_t2, colWidths=[55, 90, 45, 47, 47, 47, 47, 47, 47, 47, 51], hAlign='CENTER')
+                
+                w_talla_rollo = 337 / max(1, len(tallas_todas))
+                t2 = Table(data_t2, colWidths=[55, 90, 50] + [w_talla_rollo] * len(tallas_todas) + [50], hAlign='CENTER')
                 t2.setStyle(TableStyle(estilos_tabla2))
 
                 tablas_encogibles = KeepInFrame(
-                    maxWidth=570, maxHeight=500, 
+                    maxWidth=582, maxHeight=500, 
                     content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], 
-                    mode='shrink', vAlign='TOP'
+                    mode='shrink', vAlign='TOP', hAlign='CENTER'
                 )
                 elementos.append(tablas_encogibles); elementos.append(PageBreak())
 
@@ -1348,7 +1360,7 @@ def api_magia_pedido():
                     t_header_inv = Table([
                         [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
                          Paragraph(f"<b>FOLIO:</b> {str(folio_arranque).zfill(2)} (PEDIDO)<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-                    ], colWidths=[285, 285], hAlign='CENTER')
+                    ], colWidths=[291, 291], hAlign='CENTER')
 
                     tablas_estampados = []
                     for est_item in lote_estampados:
@@ -1363,7 +1375,7 @@ def api_magia_pedido():
                         else: f_size = 6.5; pad = 1
                             
                         style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                        w_color = 65; w_talla = 20; espacio_total_tabla = 275 
+                        w_color = 65; w_talla = 20; espacio_total_tabla = 285 
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                         
@@ -1434,13 +1446,14 @@ def api_magia_pedido():
                         ["DOBLADO", "ALMACÉN"],
                         ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
                     ]
-                    t_firmas = Table(firmas_data, colWidths=[285, 285], hAlign='CENTER')
+                    t_firmas = Table(firmas_data, colWidths=[291, 291], hAlign='CENTER')
                     t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
                     
-                    wrap_elementos = KeepInFrame(maxWidth=570, maxHeight=490, content=elementos_hoja, mode='shrink', vAlign='TOP')
-                    t_master = Table([[wrap_elementos], [t_firmas]], colWidths=[570], rowHeights=[550, 110], hAlign='CENTER') 
+                    wrap_elementos = KeepInFrame(maxWidth=582, maxHeight=490, content=elementos_hoja, mode='shrink', vAlign='TOP', hAlign='CENTER')
+                    t_master = Table([[wrap_elementos], [t_firmas]], colWidths=[582], rowHeights=[550, 110], hAlign='CENTER') 
                     t_master.setStyle(TableStyle([
                         ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,1), (0,1), 'BOTTOM'),
+                        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                         ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
                         ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0),
                     ]))
