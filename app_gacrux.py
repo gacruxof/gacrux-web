@@ -33,16 +33,27 @@ def safe_int(val):
     try: return int(val)
     except: return 0
 
+# 🔥 SISTEMA DE CONEXIONES PERMANENTES (CONNECTION POOL) 🔥
+dbconfig = {
+    "host": os.environ.get("DB_HOST", "mysql-292462b-gacrux-of.a.aivencloud.com"),
+    "user": os.environ.get("DB_USER", "avnadmin"),
+    "password": os.environ.get("DB_PASSWORD", "AVNS_lJSsblo1fLuMi6cA-yW"), 
+    "database": os.environ.get("DB_NAME", "defaultdb"),
+    "port": 19257,
+    "connect_timeout": 5
+}
+
+# Crea 5 carriles abiertos permanentemente hacia Aiven
+gacrux_pool = mysql.connector.pooling.MySQLConnectionPool(
+    pool_name="mipool",
+    pool_size=5,
+    pool_reset_session=True,
+    **dbconfig
+)
+
 def conectar_bd():
-    return mysql.connector.connect(
-        host=os.environ.get("DB_HOST", "mysql-292462b-gacrux-of.a.aivencloud.com"),
-        user=os.environ.get("DB_USER", "avnadmin"),
-        password=os.environ.get("DB_PASSWORD", "AVNS_lJSsblo1fLuMi6cA-yW"), 
-        database=os.environ.get("DB_NAME", "defaultdb"),
-        port=19257,
-        connect_timeout=5,      # 🔥 Si Aiven lo ignora, Render cancela en 5 segundos, ya no en 2 minutos.
-        ssl_disabled=False      # 🔥 Fuerza el uso de seguridad SSL que Aiven exige.
-    )
+    # Toma un carril libre al instante sin tener que hacer handshake
+    return gacrux_pool.get_connection()
 
 class UsuarioWeb(UserMixin):
     def __init__(self, id_user, usuario, nombre_real, rol_puesto):
