@@ -67,6 +67,299 @@ def load_user(user_id):
     return None
 
 # ==============================================================================
+# HTML WEB (PUENTE LIGERO PARA ESCANEO DE ALMACÉN Y POS)
+# ==============================================================================
+HTML_LOGIN = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GACRUX - Iniciar Sesión</title>
+    <style>
+        body { background-color: #121214; color: white; font-family: 'Segoe UI', Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-box { background: #1e1e24; padding: 35px 30px; border-radius: 12px; width: 90%; max-width: 360px; text-align: center; box-shadow: 0 8px 25px rgba(0,0,0,0.6); border-bottom: 4px solid #1e3a8a; }
+        h2 { font-size: 1.6rem; margin-bottom: 5px; letter-spacing: 1px; color: #89b4fa;}
+        p { color: #a6adc8; font-size: 0.95rem; margin-bottom: 25px; }
+        .input-group { position: relative; width: 100%; margin: 12px 0; }
+        input { width: 100%; padding: 14px; border: 1px solid #313244; background: #181825; color: white; border-radius: 6px; box-sizing: border-box; font-size: 1rem; transition: border 0.3s;}
+        input:focus { border-color: #89b4fa; outline: none; }
+        .input-group input { padding-right: 45px; }
+        .btn-ojo { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #888; cursor: pointer; font-size: 1.2rem; padding: 5px; }
+        button[type="submit"] { width: 100%; padding: 14px; background: #1e3a8a; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; margin-top: 15px; font-size: 1.1rem; text-transform: uppercase; box-shadow: 0 4px 0 #11111b; transition: 0.2s;}
+        button[type="submit"]:active { transform: translateY(4px); box-shadow: 0 0 0 #11111b; }
+        .error { color: #f38ba8; font-size: 0.9rem; margin-top: 15px; font-weight: bold; background: rgba(243, 139, 168, 0.1); padding: 10px; border-radius: 6px;}
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>🚀 GACRUX</h2>
+        <p>Control de Almacén Móvil</p>
+        <form method="POST">
+            <div class="input-group">
+                <input type="text" name="usuario" placeholder="Usuario" required autocomplete="off">
+            </div>
+            <div class="input-group">
+                <input type="password" id="password" name="password" placeholder="Contraseña" required>
+                <button type="button" class="btn-ojo" onclick="toggleOjoWeb()">👁️</button>
+            </div>
+            <button type="submit">ENTRAR</button>
+        </form>
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            {% for msg in messages %}
+              <div class="error">⚠️ {{ msg }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+    </div>
+    <script>
+        function toggleOjoWeb() {
+            const labelPass = document.getElementById('password');
+            const btnOjo = document.querySelector('.btn-ojo');
+            if (labelPass.type === 'password') { labelPass.type = 'text'; btnOjo.style.color = '#89b4fa'; } 
+            else { labelPass.type = 'password'; btnOjo.style.color = '#888'; }
+        }
+    </script>
+</body>
+</html>
+"""
+
+HTML_BASE = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GACRUX - Escáner Puente</title>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        :root {
+            --bg-body: #11111b; --bg-card: #1e1e2e; --bg-block: #181825; 
+            --text-main: #cdd6f4; --text-muted: #a6adc8; --border-color: #313244;
+            --input-bg: #11111b; --input-border: #45475a; --primary: #1e3a8a; --danger: #e63946; --success: #16a34a;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        body { background-color: var(--bg-body); color: var(--text-main); padding: 10px 15px; padding-top: 80px;}
+        header { position: fixed; top: 0; left: 0; right: 0; height: 65px; background-color: var(--bg-card); display: flex; justify-content: space-between; align-items: center; padding: 0 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 1000; border-bottom: 2px solid var(--primary); }
+        .logo-title { font-size: 1.5rem; font-weight: 900; color: var(--primary); letter-spacing: 1px;}
+        .profile-btn { background: var(--bg-block); color: var(--text-main); font-size: 1.2rem; border: 1px solid var(--border-color); border-radius: 50%; width: 42px; height: 42px; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .container { max-width: 600px; margin: 0 auto; }
+        .seccion { background-color: var(--bg-card); padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); border: 1px solid var(--border-color); text-align: center;}
+        
+        /* Controles de Modo */
+        .modo-switch { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 25px; }
+        .btn-modo { flex: 1; padding: 15px 10px; font-size: 1rem; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; color: white; transition: 0.2s; }
+        .modo-inactivo { background-color: var(--bg-block); color: var(--text-muted); border: 1px solid var(--border-color); }
+        
+        .modo-baja-activo { background-color: var(--danger); box-shadow: 0 0 12px rgba(230, 57, 70, 0.5); }
+        .modo-pos-activo { background-color: var(--success); box-shadow: 0 0 12px rgba(22, 163, 74, 0.5); }
+
+        /* Controles Generales */
+        input[type="text"] { width: 100%; padding: 18px; border-radius: 8px; border: 2px solid var(--input-border); font-size: 1.1rem; margin-bottom: 15px; background-color: var(--input-bg); color: var(--text-main); text-align: center; }
+        input[type="text"]:focus { border-color: var(--primary); outline: none; }
+        
+        .btn-accion { width: 100%; padding: 18px; border-radius: 8px; border: none; font-size: 1.1rem; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; box-shadow: 0 4px 0 rgba(0,0,0,0.3); transition: 0.2s; margin-bottom: 10px;}
+        .btn-accion:active { transform: translateY(4px); box-shadow: 0 0 0 rgba(0,0,0,0); }
+        
+        .btn-camara { background-color: var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 1.2rem;}
+        
+        /* Escáner */
+        #contenedor-lector { position: relative; width: 100%; margin: 0 auto 20px auto; display: none; }
+        #reader { width: 100%; border-radius: 12px; overflow: hidden; border: 3px solid var(--primary); background: black;}
+        .contador-escaner { position: absolute; top: 10px; right: 10px; background-color: var(--danger); color: white; padding: 6px 15px; border-radius: 20px; font-weight: 900; font-size: 1.5rem; display: none; z-index: 999; box-shadow: 0 4px 10px rgba(0,0,0,0.6); border: 2px solid white; transition: transform 0.15s ease-out; }
+        
+        #controles-camara { display: none; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .btn-cerrar-cam { background-color: var(--bg-block); color: white; border: 1px solid var(--border-color); width: 30%; }
+        .btn-disparar { background-color: #2e7d32; flex-grow: 1; }
+        
+        #notificacion { text-align: center; margin-top: 20px; font-weight: bold; font-size: 1.1rem; padding: 10px; border-radius: 8px; min-height: 45px;}
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-title">🚀 GACRUX</div>
+        <div onclick="window.location.href='/logout'" class="profile-btn" title="Cerrar Sesión">🚪</div>
+    </header>
+
+    <div class="container">
+        <div class="seccion">
+            
+            <div class="modo-switch">
+                <button id="btn-modo-baja" class="btn-modo modo-baja-activo" onclick="setModo('baja')">🔻 MODO ALMACÉN</button>
+                <button id="btn-modo-pos" class="btn-modo modo-inactivo" onclick="setModo('pos')">🛒 MODO POS</button>
+            </div>
+
+            <button class="btn-accion btn-camara" id="btn-encender-cam" onclick="encenderScanner()"><span>📷</span> INICIAR CÁMARA</button>
+            
+            <div id="contenedor-lector">
+                <div id="reader"></div>
+                <div id="badge-contador" class="contador-escaner">x1</div>
+            </div>
+            
+            <div id="controles-camara">
+                <button class="btn-accion btn-cerrar-cam" onclick="apagarScanner()">CERRAR</button>
+                <button class="btn-accion btn-disparar" id="btn-disparar" onclick="activarDisparo()">🎯 LEER CÓDIGO</button>
+            </div>
+
+            <input type="text" id="codigo_barras" placeholder="Escribe el código manualmente..." autocomplete="off">
+            <button class="btn-accion" id="btn-procesar-manual" style="background-color: var(--bg-block); border: 1px solid var(--border-color); color: var(--text-main);" onclick="procesarEscaneo()">EJECUTAR MANUAL</button>
+            
+            <div id="notificacion"></div>
+        </div>
+    </div>
+
+    <script>
+        let modoActual = 'baja'; // 'baja' o 'pos'
+        let html5QrCode = null;
+        let scannerActivoParaLeer = false; 
+        let ultimoCodigoEscaneado = "";
+        let contadorMismoCodigo = 0;
+
+        function setModo(modo) {
+            modoActual = modo;
+            const btnBaja = document.getElementById('btn-modo-baja');
+            const btnPos = document.getElementById('btn-modo-pos');
+            
+            if (modo === 'baja') {
+                btnBaja.className = 'btn-modo modo-baja-activo';
+                btnPos.className = 'btn-modo modo-inactivo';
+            } else {
+                btnPos.className = 'btn-modo modo-pos-activo';
+                btnBaja.className = 'btn-modo modo-inactivo';
+            }
+            document.getElementById('notificacion').innerText = "";
+        }
+
+        function hacerBeep() {
+            try {
+                let AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return; 
+                let ctx = new AudioContext();
+                let osc = ctx.createOscillator(); let gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = "square"; osc.frequency.setValueAtTime(850, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.start(); osc.stop(ctx.currentTime + 0.15); 
+            } catch(e) {}
+        }
+
+        function encenderScanner() {
+            document.getElementById('codigo_barras').setAttribute('readonly', 'true');
+            document.getElementById('contenedor-lector').style.display = 'block'; 
+            document.getElementById('btn-encender-cam').style.display = 'none';
+            document.getElementById('controles-camara').style.display = 'flex';
+            
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 10, qrbox: { width: 250, height: 120 } };
+
+            Html5Qrcode.getCameras().then(devices => {
+                if (devices && devices.length) {
+                    let cameraId = devices[0].id;
+                    for (let i = 0; i < devices.length; i++) {
+                        let lbl = devices[i].label.toLowerCase();
+                        if (lbl.includes("back") || lbl.includes("trasera") || lbl.includes("environment")) {
+                            cameraId = devices[i].id;
+                        }
+                    }
+                    if (cameraId === devices[0].id && devices.length > 1) {
+                        cameraId = devices[devices.length - 1].id;
+                    }
+                    iniciarLecturaConId(cameraId, config);
+                } else {
+                    iniciarLecturaConId({ facingMode: "environment" }, config);
+                }
+            }).catch(err => {
+                iniciarLecturaConId({ facingMode: "environment" }, config);
+            });
+        }
+
+        function iniciarLecturaConId(idCamara, config) {
+            html5QrCode.start(idCamara, config, 
+                (textoDecodificado) => {
+                    if (scannerActivoParaLeer) {
+                        scannerActivoParaLeer = false; hacerBeep(); 
+                        if (textoDecodificado === ultimoCodigoEscaneado) { contadorMismoCodigo++; } 
+                        else { ultimoCodigoEscaneado = textoDecodificado; contadorMismoCodigo = 1; }
+                        
+                        const badge = document.getElementById('badge-contador');
+                        badge.style.display = 'block'; badge.innerText = "x" + contadorMismoCodigo;
+                        badge.style.transform = "scale(1.3)"; setTimeout(() => { badge.style.transform = "scale(1)"; }, 150);
+                        
+                        document.getElementById('codigo_barras').value = textoDecodificado;
+                        const btnDisparar = document.getElementById('btn-disparar');
+                        btnDisparar.innerHTML = "🎯 LEER CÓDIGO"; btnDisparar.style.backgroundColor = "#2e7d32";
+                        procesarEscaneo();
+                    }
+                }, (errorMensaje) => {}
+            ).catch(err => {
+                if(idCamara !== { facingMode: "environment" }) {
+                    html5QrCode.start({ facingMode: "environment" }, config, () => {}, () => {}).catch(e => {
+                        alert("Error al iniciar la cámara. Verifica permisos del navegador.");
+                        apagarScanner();
+                    });
+                } else {
+                    alert("Error al iniciar la cámara. Verifica permisos del navegador.");
+                    apagarScanner();
+                }
+            });
+        }
+
+        function activarDisparo() {
+            if (!html5QrCode) return;
+            scannerActivoParaLeer = true; 
+            const btnDisparar = document.getElementById('btn-disparar');
+            btnDisparar.innerHTML = "👀 ENFOCA EL CÓDIGO..."; btnDisparar.style.backgroundColor = "#d97706"; 
+        }
+
+        function apagarScanner() {
+            document.getElementById('codigo_barras').removeAttribute('readonly');
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('contenedor-lector').style.display = 'none'; 
+                    document.getElementById('controles-camara').style.display = 'none'; 
+                    document.getElementById('btn-encender-cam').style.display = 'flex';
+                }).catch(err => {});
+            }
+        }
+
+        function procesarEscaneo() {
+            let codigo = document.getElementById('codigo_barras').value.trim();
+            if(!codigo) return;
+            
+            let url = modoActual === 'baja' ? '/api/baja' : '/api/pos/enviar';
+            
+            fetch(url, {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({codigo: codigo})
+            }).then(res => res.json()).then(data => {
+                let notif = document.getElementById('notificacion');
+                if(data.status === 'ok') {
+                    notif.style.backgroundColor = 'rgba(22, 163, 74, 0.2)';
+                    notif.style.color = 'var(--success)'; 
+                    notif.innerText = modoActual === 'baja' ? ("✅ DESCONTADO: " + (data.msg || '')) : "🛒 ENVIADO A POS";
+                } else {
+                    notif.style.backgroundColor = 'rgba(230, 57, 70, 0.2)';
+                    notif.style.color = 'var(--danger)'; 
+                    notif.innerText = "❌ ERROR: " + (data.msg || data.error);
+                }
+                document.getElementById('codigo_barras').value = '';
+            }).catch(err => {
+                let notif = document.getElementById('notificacion');
+                notif.style.backgroundColor = 'rgba(230, 57, 70, 0.2)';
+                notif.style.color = 'var(--danger)'; 
+                notif.innerText = "❌ Error de red con el servidor.";
+            });
+        }
+        
+        document.getElementById('codigo_barras').addEventListener('keypress', function(e) { 
+            if (e.key === 'Enter') procesarEscaneo(); 
+        });
+    </script>
+</body>
+</html>
+"""
+
+# ==============================================================================
 # RUTAS WEB PRINCIPALES Y DESPERTADOR
 # ==============================================================================
 @app.route('/api/ping', methods=['GET'])
@@ -750,27 +1043,39 @@ def api_magia_pedido():
                 ]))
 
                 data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
-                suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; idx_color = 0
-                for c, l_cant in lienzos.items():
-                    if l_cant == 0: continue
-                    fila = ["Marcado\n1" if idx_color == 0 else "", Paragraph(c, estilo_wrap), str(l_cant)]; suma_lienzos += l_cant
-                    for t in tallas_todas:
-                        prod = l_cant * cuerpos.get(t, 0); fila.append(str(prod) if prod > 0 else ""); suma_tallas[t] += prod
-                    tot_fila = sum(l_cant * cuerpos.get(tx, 0) for tx in grupo_tallas)
-                    fila.append(str(tot_fila)); gran_total += tot_fila; data_t2.append(fila); idx_color += 1
+                marcados = []; current_marcado = []; current_sum = 0
+                for d in datos_corte:
+                    if current_sum + d["lienzos"] > 80 and current_sum > 0:
+                        marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
+                    else: current_marcado.append(d); current_sum += d["lienzos"]
+                if current_marcado: marcados.append(current_marcado)
+
+                suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; row_idx = 1
+                estilos_tabla2 = [
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
+                ]
+                for num_m, marcado_data in enumerate(marcados):
+                    start_row = row_idx
+                    for i, d in enumerate(marcado_data):
+                        fila = [f"Marcado\n{num_m + 1}" if i == 0 else "", Paragraph(d["color"], estilo_wrap), str(d["lienzos"])]
+                        suma_lienzos += d["lienzos"]
+                        for t in tallas_todas:
+                            val = d["totales_talla"].get(t, 0); fila.append(str(val) if val > 0 else ""); suma_tallas[t] += val
+                        fila.append(str(d["gran_total"])); gran_total += d["gran_total"]; data_t2.append(fila); row_idx += 1
+                    if len(marcado_data) > 1: estilos_tabla2.append(('SPAN', (0, start_row), (0, row_idx - 1)))
 
                 fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
                 for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
                 fila_final.append(str(gran_total)); data_t2.append(fila_final)
-                
+                estilos_tabla2.extend([
+                    ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
+                    ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
+                ])
                 t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45], hAlign='CENTER')
-                t2.setStyle(TableStyle([
-                    ('SPAN', (0, 1), (0, max(1, idx_color))), ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#fef3c7")), 
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9), ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1")),
-                    ('SPAN', (0, -1), (1, -1)), ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fde68a")), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
-                ]))
-                
+                t2.setStyle(TableStyle(estilos_tabla2))
+
                 tablas_encogibles = KeepInFrame(
                     maxWidth=540, maxHeight=500, 
                     content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], 
@@ -779,7 +1084,7 @@ def api_magia_pedido():
                 elementos.append(tablas_encogibles); elementos.append(PageBreak())
 
             # 2. DIBUJAR INVENTARIOS UNIFICADOS
-            t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
+            t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
             MAX_COLORS = 10
             color_chunks = [colores_activos[i:i + MAX_COLORS] for i in range(0, len(colores_activos), MAX_COLORS)]
 
@@ -790,55 +1095,68 @@ def api_magia_pedido():
                         [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
                          Paragraph(f"<b>FOLIO:</b> {str(folio_arranque).zfill(2)} (PEDIDO)<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
                     ], colWidths=[270, 270], hAlign='CENTER')
-                    
+
                     tablas_estampados = []
-                    for idx_interno, est in enumerate(lote_estampados):
-                        original_idx = estampados.index(est) + 1 if est in estampados else 1
-                        title_text = f"<font color='#d97706'>▐</font> <b>ESTAMPADO {original_idx}: {est}</b>"
+                    for est_item in lote_estampados:
+                        original_idx = estampados.index(est_item) + 1 if est_item in estampados else 1
+                        title_text = f"<font color='#d97706'>▐</font> <b>ESTAMPADO {original_idx}: {est_item}</b>"
                         if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
-                        title = Paragraph(title_text, ParagraphStyle('titulo_grande', fontSize=10, fontName='Helvetica-Bold'))
+                        title = Paragraph(title_text, t_title)
                         
                         num_colors_chunk = len(color_chunk)
                         if num_colors_chunk <= 6: f_size = 8; pad = 4
                         elif num_colors_chunk <= 10: f_size = 7.5; pad = 3
                         else: f_size = 6.5; pad = 1
                             
-                        style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
+                        style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
                         w_color = 60; w_talla = 20; espacio_total_tabla = 260 
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
-                        anchos = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
+                        anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                         
-                        data_tot = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
+                        data_t = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
                         data_ped = [["COLOR", "", ""] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
                         data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
-                        
+
                         for c in color_chunk:
-                            r_tot = [Paragraph(c, style_color_inv), "", ""]; r_ped = [Paragraph(c, style_color_inv), "", ""]; r_sob = [Paragraph(c, style_color_inv), "", ""]
+                            r_tot = [Paragraph(c, style_color_inv_dyn), "", ""]
+                            r_ped = [Paragraph(c, style_color_inv_dyn), "", ""]
+                            r_sob = [Paragraph(c, style_color_inv_dyn), "", ""]
+                            
                             for t in tallas_activas:
-                                prod = total_prod[c][t]; ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
+                                prod = total_prod[c][t]
+                                ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
+                                
                                 base_prod = prod // num_est; sobra_prod = prod % num_est
-                                prod_est = base_prod + 1 if estampados.index(est) < sobra_prod else base_prod
+                                prod_est = base_prod + 1 if estampados.index(est_item) < sobra_prod else base_prod
+                                
                                 base_ped = ped // num_est; sobra_ped = ped % num_est
-                                ped_est = base_ped + 1 if estampados.index(est) < sobra_ped else base_ped
+                                ped_est = base_ped + 1 if estampados.index(est_item) < sobra_ped else base_ped
+                                
                                 sob_est = max(0, prod_est - ped_est)
-                                r_tot.append(str(prod_est) if prod_est>0 else "-"); r_ped.append(str(ped_est) if ped_est>0 else "-"); r_sob.append(str(sob_est) if sob_est>0 else "-")
+                                
+                                r_tot.append(str(prod_est) if prod_est>0 else "-")
+                                r_ped.append(str(ped_est) if ped_est>0 else "-")
+                                r_sob.append(str(sob_est) if sob_est>0 else "-")
+                                
                                 sum_tot[t] += prod_est; sum_ped[t] += ped_est; sum_sob[t] += sob_est
 
                             data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
                         
-                        data_tot.append(["SUMA", "", ""] + [str(sum_tot[t]) for t in tallas_activas]); data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas]); data_sob.append(["SUMA", "", ""] + [str(sum_sob[t]) for t in tallas_activas])
+                        data_tot.append(["SUMA", "", ""] + [str(sum_tot[t]) for t in tallas_activas])
+                        data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
+                        data_sob.append(["SUMA", "", ""] + [str(sum_sob[t]) for t in tallas_activas])
 
                         style_tabla_3 = TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
-                            ('SPAN', (0, -1), (2, -1)), ('SPAN', (0, 0), (2, 0)),
-                            ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
+                            ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
                             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                            ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")),
+                            ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")), 
                             ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                         ])
-                        t_tot = Table(data_tot, colWidths=anchos, hAlign='CENTER'); t_tot.setStyle(style_tabla_3)
-                        t_ped = Table(data_ped, colWidths=anchos, hAlign='CENTER'); t_ped.setStyle(style_tabla_3)
-                        t_sob = Table(data_sob, colWidths=anchos, hAlign='CENTER'); t_sob.setStyle(style_tabla_3)
+                        
+                        t_tot = Table(data_tot, colWidths=anchos_columnas, hAlign='CENTER'); t_tot.setStyle(style_tabla_3)
+                        t_ped = Table(data_ped, colWidths=anchos_columnas, hAlign='CENTER'); t_ped.setStyle(style_tabla_3)
+                        t_sob = Table(data_sob, colWidths=anchos_columnas, hAlign='CENTER'); t_sob.setStyle(style_tabla_3)
 
                         wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_tot]], hAlign='CENTER')
                         wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]], hAlign='CENTER')
@@ -849,8 +1167,12 @@ def api_magia_pedido():
 
                     elementos_hoja = [t_header_inv, Spacer(1, 15)]
                     for i in range(0, len(tablas_estampados), 2):
-                        titulo_est = tablas_estampados[i+1]; tabla_est = tablas_estampados[i]
-                        elementos_hoja.append(titulo_est); elementos_hoja.append(Spacer(1, 8)); elementos_hoja.append(tabla_est); elementos_hoja.append(Spacer(1, 15))
+                        titulo_est = tablas_estampados[i+1]
+                        tabla_est = tablas_estampados[i]
+                        elementos_hoja.append(titulo_est)
+                        elementos_hoja.append(Spacer(1, 8))
+                        elementos_hoja.append(tabla_est)
+                        elementos_hoja.append(Spacer(1, 15))
 
                     firmas_data = [
                         [" ", " "], [" ", " "], [" ", " "],
@@ -872,7 +1194,7 @@ def api_magia_pedido():
                     if not (lote_idx == len(est_por_folio) - 1 and chunk_idx == len(color_chunks) - 1):
                         elementos.append(PageBreak())
 
-            doc.build(elementos)
+            doc.build(elementos) 
             pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
             buffer.close()
 
