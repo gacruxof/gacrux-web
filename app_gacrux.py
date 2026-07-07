@@ -646,19 +646,6 @@ def logout():
 # ==============================================================================
 # RUTAS DE LA APP MÓVIL Y ADMIN
 # ==============================================================================
-
-def dibujar_footer_firmas(canvas, doc):
-    canvas.saveState()
-    canvas.setFont("Helvetica-Bold", 9)
-    canvas.setFillColor(colors.black)
-    canvas.drawCentredString(150, 50, "___________________________________")
-    canvas.drawCentredString(150, 35, "DOBLADO")
-    canvas.drawCentredString(150, 20, "JACQUELINE TLATELPA XOLALTENCO")
-    canvas.drawCentredString(460, 50, "___________________________________")
-    canvas.drawCentredString(460, 35, "ALMACÉN")
-    canvas.drawCentredString(460, 20, "DULCE EVELIN POTRERO RODRIGUEZ")
-    canvas.restoreState()
-
 def generar_codigo_13_nube(cursor, modelo, estampado, color, talla):
     cursor.execute("SELECT SUBSTRING(codigo_barras, 1, 5) AS mod_id FROM inventario WHERE modelo = %s AND LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' LIMIT 1", (modelo,))
     res_mod = cursor.fetchone()
@@ -722,13 +709,13 @@ def api_app_bases():
         if cursor: cursor.close()
         if db: db.close()
 
+# 🔥 SOLUCIÓN DEL CONGELAMIENTO EN RECETAS: Se quito el CREATE TABLE 🔥
 @app.route('/api/app/receta/<modelo>', methods=['GET'])
 def api_get_receta(modelo):
     db = None; cursor = None
     try:
         db = conectar_bd()
         cursor = db.cursor(dictionary=True)
-        cursor.execute("CREATE TABLE IF NOT EXISTS recetas_madre (modelo VARCHAR(100) PRIMARY KEY, folio INT DEFAULT 1, colores TEXT, cuerpos TEXT)")
         cursor.execute("SELECT * FROM recetas_madre WHERE modelo = %s", (modelo,))
         res = cursor.fetchone()
         if res: return jsonify(res)
@@ -972,8 +959,12 @@ def api_migrar_bd():
             cursor.execute("ALTER TABLE inventario ADD COLUMN estilo VARCHAR(50) DEFAULT 'NORMAL'")
             cursor.execute("ALTER TABLE inventario ADD COLUMN tipo_prenda VARCHAR(50) DEFAULT 'SUDADERA'")
             mensajes.append("✅ Filtros añadidos a inventario.")
+            
         cursor.execute("CREATE TABLE IF NOT EXISTS modelos_base (id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE, genero VARCHAR(50), estilo VARCHAR(50), tipo_prenda VARCHAR(50))")
         cursor.execute("CREATE TABLE IF NOT EXISTS colores_base (id INT AUTO_INCREMENT PRIMARY KEY, nombre VARCHAR(100) UNIQUE)")
+        # 🔥 EL CREATE TABLE DE RECETAS AHORA ESTA AQUI, PROTEGIENDO LA DESCARGA DE BLOQUEOS 🔥
+        cursor.execute("CREATE TABLE IF NOT EXISTS recetas_madre (modelo VARCHAR(100) PRIMARY KEY, folio INT DEFAULT 1, colores TEXT, cuerpos TEXT, cuerpos_ids TEXT)")
+        
         mensajes.append("✅ Tablas de Autocompletado Creadas.")
         db.commit()
         return f"<h1>Migración Gacrux Completada</h1><p>{'<br>'.join(mensajes)}</p>"
@@ -997,8 +988,6 @@ def api_magia_madre():
         
         req = request.get_json()
         modelo = req.get('modelo', '').strip().upper()
-        
-        # 🔥 EL SECRETO ESTÁ EN MANTENER LOS VACÍOS HASTA EL AGRUPAMIENTO 🔥
         raw_estampados = req.get('estampados', [])
         estampados_por_folio = int(req.get('estampados_por_folio', 4))
         
@@ -1059,16 +1048,12 @@ def api_magia_madre():
             datos_corte.sort(key=lambda x: x["gran_total"], reverse=True)
             num_folios = len(folios_a_usar)
             
-            # 🔥 LÓGICA DE ESTAMPADOS MEJORADA Y CORREGIDA 🔥
-            # Primero partimos la lista usando la opción que elegiste en la app (1, 2, 3 o 4)
+            # 🔥 LÓGICA DE ESTAMPADOS: RESPETA EL ORDEN DE LA APP Y LOS ESPACIOS VACÍOS 🔥
             est_por_folio_raw = [raw_estampados[i:i + estampados_por_folio] for i in range(0, len(raw_estampados), estampados_por_folio)]
-            
             est_por_folio = []
             estampados = []
             for chunk in est_por_folio_raw:
-                # Quitamos los que vengan vacíos SOLO dentro de su propia hoja
                 clean_chunk = [e for e in chunk if e.strip()]
-                # Si una hoja entera queda vacía (por ejemplo, dejaste toda la hoja 2 en blanco), le ponemos "SIN ESTAMPADO" para que el inventario no se pierda.
                 if not clean_chunk:
                     clean_chunk = ["SIN ESTAMPADO"]
                 est_por_folio.append(clean_chunk)
@@ -1187,7 +1172,7 @@ def api_magia_madre():
              Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
              Paragraph(f"<font color='red'><b>FOLIO:</b> {str_folios}</font>", ParagraphStyle(name='hr', alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12))],
             [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
-        ], colWidths=[185, 185, 185], rowHeights=[20, 135]) 
+        ], colWidths=[185, 185, 185], rowHeights=[20, 135], hAlign='CENTER') 
         t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
         
         elementos.append(t_header_corte)
@@ -1206,7 +1191,8 @@ def api_magia_madre():
             for t in tallas_todas: fila.append(f_calc(int(cuerpos_actuales.get(t, 0))))
             data_t1.append(fila)
 
-        t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60])
+        # 🔥 AÑADIDA LA INSTRUCCIÓN hAlign='CENTER' A TODAS LAS TABLAS 🔥
+        t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60], hAlign='CENTER')
         t1.setStyle(TableStyle([
             ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
             ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#f8fafc")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
@@ -1245,7 +1231,7 @@ def api_magia_madre():
             ('SPAN', (0, row_idx), (1, row_idx)), ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#e2e8f0")), 
             ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.black), ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
         ])
-        t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45])
+        t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45], hAlign='CENTER')
         t2.setStyle(TableStyle(estilos_tabla2))
 
         tablas_encogibles = KeepInFrame(
@@ -1255,17 +1241,15 @@ def api_magia_madre():
         )
         elementos.append(tablas_encogibles); elementos.append(PageBreak())
 
-        # 🔥 INVENTARIOS UNIFICADOS COMPACTOS 🔥
+        # 🔥 INVENTARIOS UNIFICADOS (TAMAÑO COMPACTO Y CENTRADOS) 🔥
         t_title = ParagraphStyle('titulo', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
         MAX_COLORS = 10
         color_chunks = [colores[i:i + MAX_COLORS] for i in range(0, len(colores), MAX_COLORS)]
 
         for i_f, data_folio in enumerate(datos_inventario_global):
-            folio = data_folio["folio"]
-            estampados_data = data_folio["estampados"]
+            folio = data_folio["folio"]; estampados_data = data_folio["estampados"]
 
             for chunk_idx, color_chunk in enumerate(color_chunks):
-                # Volvemos a partir los datos estrictamente por el número indicado para dibujarlos
                 estampados_por_hoja = [estampados_data[i:i + estampados_por_folio] for i in range(0, len(estampados_data), estampados_por_folio)]
                 if not estampados_por_hoja: estampados_por_hoja = [[]]
                 
@@ -1273,14 +1257,11 @@ def api_magia_madre():
                     t_header_inv = Table([
                         [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
                          Paragraph(f"<b>FOLIO:</b> {folio}<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-                    ], colWidths=[285, 285])
+                    ], colWidths=[270, 270], hAlign='CENTER') # 🔥 REDUCIDO Y CENTRADO
 
                     tablas_estampados = []
                     for est_item in lote_estampados:
-                        est_nombre = est_item["nombre"]
-                        filas_colores = est_item["filas"]
-                        global_idx = est_item["global_idx"]
-                        
+                        est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]; global_idx = est_item["global_idx"]
                         title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {global_idx}: {est_nombre}</b>"
                         if len(color_chunks) > 1: title_text += f" (Parte {chunk_idx + 1})"
                         title = Paragraph(title_text, t_title)
@@ -1291,28 +1272,25 @@ def api_magia_madre():
                         else: f_size = 6.5; pad = 1
                             
                         style_color_inv_dyn = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                        w_color = 65; w_talla = 22; espacio_total_tabla = 285 
-                        w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
+                        w_color = 60; w_talla = 20; espacio_total_tabla = 260 
+                        w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_usadas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_usadas)
                         
-                        data_t = [["COLOR", "", ""] + tallas_usadas]
-                        totales_tallas = {t: 0 for t in tallas_usadas}
+                        data_t = [["COLOR", "", ""] + tallas_usadas]; totales_tallas = {t: 0 for t in tallas_usadas}
 
                         for c in color_chunk:
                             row_data = next((r for r in filas_colores if r["color"] == c), None)
                             if row_data:
                                 r_row = [Paragraph(c, style_color_inv_dyn), "", ""]
                                 for t in tallas_usadas:
-                                    cant = row_data["tallas"].get(t, 0)
-                                    r_row.append(str(cant) if cant > 0 else "")
-                                    totales_tallas[t] += cant
+                                    cant = row_data["tallas"].get(t, 0); r_row.append(str(cant) if cant > 0 else ""); totales_tallas[t] += cant
                                 data_t.append(r_row)
 
                         f_tot = ["TOTAL", "", ""]
                         for t in tallas_usadas: f_tot.append(str(totales_tallas[t]))
                         data_t.append(f_tot)
 
-                        t_inv = Table(data_t, colWidths=anchos_columnas)
+                        t_inv = Table(data_t, colWidths=anchos_columnas, hAlign='CENTER') # 🔥 CENTRADO
                         t_inv.setStyle(TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
                             ('SPAN', (0, -1), (2, -1)), ('ALIGN', (0,0), (0,-1), 'LEFT'), ('ALIGN', (3,0), (-1,-1), 'CENTER'), ('ALIGN', (0,-1), (2,-1), 'CENTER'), 
@@ -1321,14 +1299,14 @@ def api_magia_madre():
                             ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                         ]))
                         
-                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[285])
+                        wrapper_table = Table([[title], [Spacer(1, 4)], [t_inv]], colWidths=[260], hAlign='CENTER') # 🔥 CENTRADO
                         wrapper_table.setStyle(TableStyle([('LEFTPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0)]))
                         tablas_estampados.append(wrapper_table)
 
                     while len(tablas_estampados) < 4: tablas_estampados.append("")
 
                     grid_data = [[tablas_estampados[0], tablas_estampados[1]], [Spacer(1, 15), Spacer(1, 15)], [tablas_estampados[2], tablas_estampados[3]]]
-                    t_grid = Table(grid_data, colWidths=[291, 291])
+                    t_grid = Table(grid_data, colWidths=[270, 270], hAlign='CENTER') # 🔥 CENTRADO Y REDUCIDO
                     t_grid.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
                     
                     firmas_data = [
@@ -1337,11 +1315,11 @@ def api_magia_madre():
                         ["DOBLADO", "ALMACÉN"],
                         ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
                     ]
-                    t_firmas = Table(firmas_data, colWidths=[291, 291])
+                    t_firmas = Table(firmas_data, colWidths=[270, 270], hAlign='CENTER')
                     t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
                     
-                    wrap_t_grid = KeepInFrame(maxWidth=582, maxHeight=490, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
-                    t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[582], rowHeights=[550, 130]) 
+                    wrap_t_grid = KeepInFrame(maxWidth=540, maxHeight=490, content=[t_header_inv, Spacer(1,15), t_grid], mode='shrink', vAlign='TOP')
+                    t_master = Table([[wrap_t_grid], [t_firmas]], colWidths=[540], rowHeights=[550, 110], hAlign='CENTER') # 🔥 CENTRADO EN LA HOJA
                     t_master.setStyle(TableStyle([
                         ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,1), (0,1), 'BOTTOM'),
                         ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
@@ -1353,7 +1331,8 @@ def api_magia_madre():
                     if not (i_f == len(datos_inventario_global) - 1 and chunk_idx == len(color_chunks) - 1 and lote_idx == len(estampados_por_hoja) - 1):
                         elementos.append(PageBreak())
 
-        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
+        # 🔥 AQUI SE ELIMINO LA FUNCION FANTASMA QUE DUPLICABA LAS FIRMAS 🔥
+        doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
@@ -1384,7 +1363,6 @@ def api_magia_pedido():
         formato_img = "1500x1900 (Frente)"
         cuerpos_del_modelo = []
 
-        # 🔥 BLOQUE BASE DE DATOS 🔥
         db = None
         cursor = None
         try:
@@ -1482,7 +1460,7 @@ def api_magia_pedido():
                 for c, l_cant in lienzos.items():
                     for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos_dict.get(t, 0)
 
-            # 🔥 AGRUPACIÓN ESTRICTA DE PEDIDOS 🔥
+            # 🔥 AGRUPACIÓN ESTRICTA Y LIMPIEZA DE ESPACIOS EN BLANCO 🔥
             est_por_folio_raw = [raw_estampados[i:i + estampados_por_folio] for i in range(0, len(raw_estampados), estampados_por_folio)]
             est_por_folio = []
             estampados = []
@@ -1562,7 +1540,7 @@ def api_magia_pedido():
             if cursor: cursor.close()
             if db: db.close()
 
-        # 🔥 BLOQUE DE PDF (CERO CONGELAMIENTOS) 🔥
+        # 🔥 BLOQUE DE PDF 🔥
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=15, rightMargin=15, topMargin=40, bottomMargin=15)
         elementos = []
@@ -1574,7 +1552,8 @@ def api_magia_pedido():
             b_io = io.BytesIO(imagen_blob)
             w_img = 220 if "2500" in formato_img else 130
             logo = RLImage(b_io, width=w_img, height=130, kind='proportional')
-        else: logo = ""
+        else: 
+            logo = ""
 
         folio_actual = folio_arranque 
 
@@ -1587,10 +1566,11 @@ def api_magia_pedido():
                  Paragraph("<b>HOJA DE ORDEN DEL ÁREA DE CORTE</b>", ParagraphStyle(name='c', alignment=TA_CENTER, fontName='Helvetica-Bold')), 
                  Paragraph(f"<font color='red'><b>FOLIO:</b> {str(folio_arranque).zfill(2)} (PEDIDO)</font>", style_header_corte)],
                 [logo, "", Paragraph(f"<b>FECHA DE EXPEDICIÓN:</b><br/>{fecha_txt}<br/><br/><br/><b>FECHA DE ENTREGA:</b><br/>___________________", ParagraphStyle(name='r2', alignment=TA_RIGHT, leading=14))]
-            ], colWidths=[185, 185, 185], rowHeights=[20, 135])
+            ], colWidths=[185, 185, 185], rowHeights=[20, 135], hAlign='CENTER')
             t_header_corte.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,1), (0,1), 'CENTER')]))
             
-            elementos.append(t_header_corte); elementos.append(Spacer(1, 10))
+            elementos.append(t_header_corte)
+            elementos.append(Spacer(1, 10))
             
             tallas_todas = ["T-12", "T-16", "EX CH", "CH", "M", "G", "EX G"]
             data_t1 = [["PIEZAS", "CANTIDAD", "TALLAS", "", "", "", "", "", ""], ["", ""] + tallas_todas]
@@ -1598,15 +1578,22 @@ def api_magia_pedido():
             for c_dict in cuerpos_del_modelo:
                 nombre_p = c_dict['nombre']
                 tipo_mult = c_dict.get('tipo_multiplicador', 'x1 (Normal)')
-                if 'x2' in tipo_mult: txt_cant = "2"; f_calc = lambda c: str(c * 2) if c > 0 else ""
-                elif 'A/B' in tipo_mult: txt_cant = "L-A | L-B"; f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
-                else: txt_cant = "1"; f_calc = lambda c: str(c) if c > 0 else ""
+                if 'x2' in tipo_mult:
+                    txt_cant = "2"
+                    f_calc = lambda c: str(c * 2) if c > 0 else ""
+                elif 'A/B' in tipo_mult:
+                    txt_cant = "L-A | L-B"
+                    f_calc = lambda c: f"{c}-A | {c}-B" if c > 0 else ""
+                else:
+                    txt_cant = "1"
+                    f_calc = lambda c: str(c) if c > 0 else ""
 
                 fila = [Paragraph(nombre_p, estilo_wrap), txt_cant]
-                for t in tallas_todas: fila.append(f_calc(cuerpos.get(t, 0)))
+                for t in tallas_todas: 
+                    fila.append(f_calc(cuerpos.get(t, 0)))
                 data_t1.append(fila)
 
-            t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60])
+            t1 = Table(data_t1, colWidths=[80, 70] + [57] * 6 + [60], hAlign='CENTER')
             t1.setStyle(TableStyle([
                 ('SPAN', (2, 0), (-1, 0)), ('SPAN', (0, 0), (0, 1)), ('SPAN', (1, 0), (1, 1)),  
                 ('BACKGROUND', (0,0), (-1,1), colors.HexColor("#fef3c7")), ('TEXTCOLOR', (0,0), (-1,1), colors.black),
@@ -1615,21 +1602,31 @@ def api_magia_pedido():
             ]))
 
             data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
-            suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; idx_color = 0
+            suma_lienzos = 0
+            suma_tallas = {t: 0 for t in tallas_todas}
+            gran_total = 0
+            idx_color = 0
             for c, l_cant in lienzos.items():
                 if l_cant == 0: continue
-                fila = ["Marcado\n1" if idx_color == 0 else "", Paragraph(c, estilo_wrap), str(l_cant)]; suma_lienzos += l_cant
+                fila = ["Marcado\n1" if idx_color == 0 else "", Paragraph(c, estilo_wrap), str(l_cant)]
+                suma_lienzos += l_cant
                 for t in tallas_todas:
                     prod = l_cant * cuerpos.get(t, 0)
-                    fila.append(str(prod) if prod > 0 else ""); suma_tallas[t] += prod
+                    fila.append(str(prod) if prod > 0 else "")
+                    suma_tallas[t] += prod
                 tot_fila = sum(l_cant * cuerpos.get(tx, 0) for tx in grupo_tallas)
-                fila.append(str(tot_fila)); gran_total += tot_fila; data_t2.append(fila); idx_color += 1
+                fila.append(str(tot_fila))
+                gran_total += tot_fila
+                data_t2.append(fila)
+                idx_color += 1
 
             fila_final = ["TOTAL LIENZOS:", "", str(suma_lienzos)]
-            for t in tallas_todas: fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
-            fila_final.append(str(gran_total)); data_t2.append(fila_final)
+            for t in tallas_todas: 
+                fila_final.append(str(suma_tallas[t]) if suma_tallas[t] > 0 else "")
+            fila_final.append(str(gran_total))
+            data_t2.append(fila_final)
             
-            t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45])
+            t2 = Table(data_t2, colWidths=[55, 90, 50, 45, 45, 50, 45, 45, 45, 45, 45], hAlign='CENTER')
             t2.setStyle(TableStyle([
                 ('SPAN', (0, 1), (0, max(1, idx_color))), ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#fef3c7")), 
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -1642,7 +1639,8 @@ def api_magia_pedido():
                 content=[t1, Spacer(1, 15), Paragraph("<b>FECHA:</b> _________________", estilos['Normal']), Spacer(1, 10), t2], 
                 mode='shrink', vAlign='TOP'
             )
-            elementos.append(tablas_encogibles); elementos.append(PageBreak())
+            elementos.append(tablas_encogibles)
+            elementos.append(PageBreak())
 
         # 3. DIBUJAR INVENTARIOS UNIFICADOS
         t_title = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=10, textColor=colors.black)
@@ -1656,7 +1654,7 @@ def api_magia_pedido():
                 t_header_inv = Table([
                     [Paragraph(f"<b>CONTROL DE INVENTARIO</b><br/>MODELO: {modelo}", estilos['Normal']), 
                      Paragraph(f"<b>FOLIO:</b> {str(folio_arranque).zfill(2)} (PEDIDO)<br/><b>FECHA:</b> {fecha_txt}", ParagraphStyle(name='r', alignment=TA_RIGHT))]
-                ], colWidths=[285, 285])
+                ], colWidths=[270, 270], hAlign='CENTER')
                 
                 tablas_estampados = []
                 for idx_interno, est in enumerate(lote_estampados):
@@ -1671,8 +1669,8 @@ def api_magia_pedido():
                     else: f_size = 6.5; pad = 1
                         
                     style_color_inv = ParagraphStyle('ColorInv', fontName='Helvetica-Bold', fontSize=f_size, leading=f_size+1)
-                    w_color = 65; w_talla = 22; espacio_total_tabla = 285 
-                    w_vacio = max(15, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
+                    w_color = 60; w_talla = 20; espacio_total_tabla = 260 
+                    w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
                     anchos = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                     
                     data_tot = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
@@ -1686,10 +1684,12 @@ def api_magia_pedido():
                             prod = total_prod[c][t]
                             ped = pedidos_app.get(c, {}).get(t, 0)
                             
-                            base_prod = prod // num_est; sobra_prod = prod % num_est
+                            base_prod = prod // num_est
+                            sobra_prod = prod % num_est
                             prod_est = base_prod + 1 if estampados.index(est) < sobra_prod else base_prod
                             
-                            base_ped = ped // num_est; sobra_ped = ped % num_est
+                            base_ped = ped // num_est
+                            sobra_ped = ped % num_est
                             ped_est = base_ped + 1 if estampados.index(est) < sobra_ped else base_ped
                             
                             sob_est = max(0, prod_est - ped_est)
@@ -1698,9 +1698,13 @@ def api_magia_pedido():
                             r_ped.append(str(ped_est) if ped_est>0 else "-")
                             r_sob.append(str(sob_est) if sob_est>0 else "-")
                             
-                            sum_tot[t] += prod_est; sum_ped[t] += ped_est; sum_sob[t] += sob_est
+                            sum_tot[t] += prod_est
+                            sum_ped[t] += ped_est
+                            sum_sob[t] += sob_est
 
-                        data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
+                        data_tot.append(r_tot)
+                        data_ped.append(r_ped)
+                        data_sob.append(r_sob)
                     
                     data_tot.append(["SUMA", "", ""] + [str(sum_tot[t]) for t in tallas_activas])
                     data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
@@ -1714,15 +1718,15 @@ def api_magia_pedido():
                         ('FONTSIZE', (0,0), (-1,-1), f_size), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#94a3b8")),
                         ('BOTTOMPADDING', (0,0), (-1,-1), pad), ('TOPPADDING', (0,0), (-1,-1), pad),
                     ])
-                    t_tot = Table(data_tot, colWidths=anchos); t_tot.setStyle(style_tabla_3)
-                    t_ped = Table(data_ped, colWidths=anchos); t_ped.setStyle(style_tabla_3)
-                    t_sob = Table(data_sob, colWidths=anchos); t_sob.setStyle(style_tabla_3)
+                    t_tot = Table(data_tot, colWidths=anchos, hAlign='CENTER'); t_tot.setStyle(style_tabla_3)
+                    t_ped = Table(data_ped, colWidths=anchos, hAlign='CENTER'); t_ped.setStyle(style_tabla_3)
+                    t_sob = Table(data_sob, colWidths=anchos, hAlign='CENTER'); t_sob.setStyle(style_tabla_3)
 
-                    wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_tot]])
-                    wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]])
-                    wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]])
+                    wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_tot]], hAlign='CENTER')
+                    wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]], hAlign='CENTER')
+                    wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]], hAlign='CENTER')
 
-                    tablas_estampados.append(Table([[wrap_tot, wrap_ped], [Spacer(1, 15), Spacer(1, 15)], [wrap_sob, ""]], colWidths=[291, 291], style=[('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
+                    tablas_estampados.append(Table([[wrap_tot, wrap_ped], [Spacer(1, 15), Spacer(1, 15)], [wrap_sob, ""]], colWidths=[270, 270], style=[('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)], hAlign='CENTER'))
                     tablas_estampados.append(title)
 
                 elementos_hoja = [t_header_inv, Spacer(1, 15)]
@@ -1740,11 +1744,11 @@ def api_magia_pedido():
                     ["DOBLADO", "ALMACÉN"],
                     ["JACQUELINE TLATELPA XOLALTENCO", "DULCE EVELIN POTRERO RODRIGUEZ"]
                 ]
-                t_firmas = Table(firmas_data, colWidths=[291, 291])
+                t_firmas = Table(firmas_data, colWidths=[270, 270], hAlign='CENTER')
                 t_firmas.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,4), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
                 
-                wrap_elementos = KeepInFrame(maxWidth=582, maxHeight=500, content=elementos_hoja, mode='shrink', vAlign='TOP')
-                t_master = Table([[wrap_elementos], [t_firmas]], colWidths=[582], rowHeights=[550, 130]) 
+                wrap_elementos = KeepInFrame(maxWidth=540, maxHeight=490, content=elementos_hoja, mode='shrink', vAlign='TOP')
+                t_master = Table([[wrap_elementos], [t_firmas]], colWidths=[540], rowHeights=[550, 110], hAlign='CENTER') 
                 t_master.setStyle(TableStyle([
                     ('VALIGN', (0,0), (-1,-1), 'TOP'), ('VALIGN', (0,1), (0,1), 'BOTTOM'),
                     ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
@@ -1756,7 +1760,8 @@ def api_magia_pedido():
                 if not (lote_idx == len(est_por_folio) - 1 and chunk_idx == len(color_chunks) - 1):
                     elementos.append(PageBreak())
 
-        doc.build(elementos, onFirstPage=dibujar_footer_firmas, onLaterPages=dibujar_footer_firmas)
+        # 🔥 AQUI SE ELIMINO LA FUNCION FANTASMA QUE DUPLICABA LAS FIRMAS 🔥
+        doc.build(elementos)
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
