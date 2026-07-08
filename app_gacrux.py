@@ -1212,6 +1212,9 @@ def api_magia_pedido():
             if clean_chunk: est_por_folio.append(clean_chunk); estampados.extend(clean_chunk)
         if not estampados: estampados = ["SIN ESTAMPADO"]; est_por_folio = [["SIN ESTAMPADO"]]
 
+        # 🔥 FIX: SACAR ESTA VARIABLE AFUERA PARA QUE EL PASO 2 (PDF) LA PUEDA LEER 🔥
+        num_est = len(estampados)
+
         # 🔥 PASO 1: BASE DE DATOS 🔥
         if step in ['db', 'all']:
             db = conectar_bd(); cursor = db.cursor(dictionary=True)
@@ -1222,7 +1225,7 @@ def api_magia_pedido():
                     for c, l_cant in lienzos.items():
                         for t in grupo_tallas: total_prod[c][t] += l_cant * cuerpos_dict.get(t, 0)
 
-                num_est = len(estampados); total_ingresado_nube = 0
+                total_ingresado_nube = 0
                 mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
 
                 for i_e, est in enumerate(estampados):
