@@ -1085,12 +1085,12 @@ def api_magia_madre():
                     if not (i_f == len(datos_inventario_global) - 1 and lote_idx == len(estampados_por_hoja) - 1):
                         elementos.append(PageBreak())
         
-                    if not elementos:
-                        elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
+        if not elementos:
+            elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
 
-                    doc.build(elementos) 
-                    pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                    buffer.close()
+        doc.build(elementos) 
+        pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        buffer.close()
 
             # =================================================================
             # 🔥 3. FABRICAR EL LIBRO DE CÓDIGOS DE BARRAS EN MEMORIA 🔥
