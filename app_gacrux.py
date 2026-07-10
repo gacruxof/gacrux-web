@@ -1117,35 +1117,48 @@ def api_magia_madre():
                     estampados_unicos = list(dict.fromkeys([r['estampado'] for r in cods_bd]))
                     
                     for est in estampados_unicos:
-                        # Título limpio, sin decir "Códigos de Barras"
                         elementos_codigos.append(Paragraph(f"MODELO: {modelo} &nbsp;&nbsp;&nbsp;&nbsp; ESTAMPADO: {est}", style_bc_title))
                         elementos_codigos.append(Spacer(1, 20))
                         
                         cods_est = [r for r in cods_bd if r['estampado'] == est]
+                        colores_unicos = list(dict.fromkeys([r['color'] for r in cods_est]))
                         
-                        # Fila 1: Talla CH, Fila 2: Talla M, etc.
-                        for t in tallas_usadas:
-                            cods_talla = [r for r in cods_est if r['talla'] == t]
-                            if not cods_talla: continue
+                        # 🔥 COLUMNAS = TALLAS, FILAS = COLORES 🔥
+                        cols_num = len(tallas_usadas) if tallas_usadas else 1
+                        w_col = 547 / cols_num
+                        
+                        # Auto-ajuste del ancho de la barra para que nunca se encimen si son muchas tallas
+                        bar_w = 1.2
+                        if cols_num >= 7: bar_w = 0.4
+                        elif cols_num == 6: bar_w = 0.5
+                        elif cols_num == 5: bar_w = 0.6
+                        elif cols_num == 4: bar_w = 0.8
+                        elif cols_num == 3: bar_w = 1.0
+                        elif cols_num == 2: bar_w = 1.3
+
+                        filas_bc = []
+                        
+                        for c in colores_unicos:
+                            fila = []
+                            for t in tallas_usadas:
+                                item = next((r for r in cods_est if r['color'] == c and r['talla'] == t), None)
+                                if item:
+                                    bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=bar_w)
+                                    txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: <b>{t}</b><br/>Color: {item['color']}", style_bc_text)
+                                    celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
+                                    fila.append(celda)
+                                else:
+                                    fila.append("") # Celda vacía si este color no tiene esta talla
+                            filas_bc.append(fila)
                             
-                            celdas = []
-                            for item in cods_talla:
-                                bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=1.1)
-                                txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: {t}<br/>Color: {item['color']}", style_bc_text)
-                                celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
-                                celdas.append(celda)
-                                
-                            # Agrupar en cuadrícula de 4 por fila para distribuirlos uniformemente
-                            cols_num = 4
-                            filas = [celdas[i:i+cols_num] for i in range(0, len(celdas), cols_num)]
-                            while len(filas[-1]) < cols_num: filas[-1].append("")
-                            
-                            t_bc = Table(filas, colWidths=[136]*cols_num, hAlign='LEFT')
-                            t_bc.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 15)]))
-                            
-                            elementos_codigos.append(t_bc)
-                            elementos_codigos.append(Spacer(1, 10))
-                            
+                        t_bc = Table(filas_bc, colWidths=[w_col]*cols_num, hAlign='LEFT')
+                        t_bc.setStyle(TableStyle([
+                            ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 15)
+                        ]))
+                        
+                        elementos_codigos.append(t_bc)
                         elementos_codigos.append(PageBreak()) 
             except Exception as e:
                 print("Error Códigos Madre:", e)
@@ -1167,12 +1180,6 @@ def api_magia_madre():
                 'pdf_codigos_base64': pdf_codigos_base64,
                 'filename_codigos': f"Gacrux_{modelo}_Codigos_Produccion_{str_folios}.pdf"
             })
-
-    except Exception as e:
-        error_exacto = traceback.format_exc()
-        print("ERROR CRÍTICO MADRE:", error_exacto)
-        return jsonify({'error': f"💥 Falla exacta:\n{error_exacto}"}), 500
-
 
 @app.route('/api/app/magia_pedido', methods=['POST'])
 def api_magia_pedido():
@@ -1649,29 +1656,44 @@ def api_magia_pedido():
                         elementos_codigos.append(Spacer(1, 20))
                         
                         cods_est = [r for r in cods_bd if r['estampado'] == est]
+                        colores_unicos = list(dict.fromkeys([r['color'] for r in cods_est]))
                         
-                        # Fila 1: Talla CH, Fila 2: Talla M, etc.
-                        for t in tallas_activas:
-                            cods_talla = [r for r in cods_est if r['talla'] == t]
-                            if not cods_talla: continue
+                        # 🔥 COLUMNAS = TALLAS, FILAS = COLORES 🔥
+                        cols_num = len(tallas_activas) if tallas_activas else 1
+                        w_col = 547 / cols_num
+                        
+                        # Auto-ajuste del ancho de la barra
+                        bar_w = 1.2
+                        if cols_num >= 7: bar_w = 0.4
+                        elif cols_num == 6: bar_w = 0.5
+                        elif cols_num == 5: bar_w = 0.6
+                        elif cols_num == 4: bar_w = 0.8
+                        elif cols_num == 3: bar_w = 1.0
+                        elif cols_num == 2: bar_w = 1.3
+
+                        filas_bc = []
+                        
+                        for c in colores_unicos:
+                            fila = []
+                            for t in tallas_activas:
+                                item = next((r for r in cods_est if r['color'] == c and r['talla'] == t), None)
+                                if item:
+                                    bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=bar_w)
+                                    txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: <b>{t}</b><br/>Color: {item['color']}", style_bc_text)
+                                    celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
+                                    fila.append(celda)
+                                else:
+                                    fila.append("") # Celda vacía si no pidieron esa talla en ese color
+                            filas_bc.append(fila)
                             
-                            celdas = []
-                            for item in cods_talla:
-                                bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=1.1)
-                                txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: {t}<br/>Color: {item['color']}", style_bc_text)
-                                celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
-                                celdas.append(celda)
-                                
-                            cols_num = 4
-                            filas = [celdas[i:i+cols_num] for i in range(0, len(celdas), cols_num)]
-                            while len(filas[-1]) < cols_num: filas[-1].append("")
-                            
-                            t_bc = Table(filas, colWidths=[136]*cols_num, hAlign='LEFT')
-                            t_bc.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 15)]))
-                            
-                            elementos_codigos.append(t_bc)
-                            elementos_codigos.append(Spacer(1, 10))
-                            
+                        t_bc = Table(filas_bc, colWidths=[w_col]*cols_num, hAlign='LEFT')
+                        t_bc.setStyle(TableStyle([
+                            ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 15)
+                        ]))
+                        
+                        elementos_codigos.append(t_bc)
                         elementos_codigos.append(PageBreak()) 
             except Exception as e:
                 print("Error Códigos Pedido:", e)
