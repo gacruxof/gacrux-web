@@ -847,6 +847,7 @@ def api_magia_madre():
             cursor_fast.close(); db_fast.close()
 
         for i_f, folio_actual in enumerate(folios_a_usar):
+            current_global_idx = 1  # 🔥 NUEVO: Reinicia el contador a 1 por cada folio
             estampados_del_folio = est_por_folio[i_f]; estampados_data = []
             conteo_nombres = {}
             for est_name in estampados_del_folio:
