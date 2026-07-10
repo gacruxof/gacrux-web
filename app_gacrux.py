@@ -18,6 +18,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+from reportlab.graphics.barcode import code128
 
 try:
     from dotenv import load_dotenv
@@ -1085,13 +1086,87 @@ def api_magia_madre():
                         elementos.append(PageBreak())
         
         if not elementos:
-            elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
+                elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
 
-        doc.build(elementos)
-        pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        buffer.close()
+            doc.build(elementos) 
+            pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            buffer.close()
 
-        return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Produccion_{str_folios}.pdf"})
+            # =================================================================
+            # 🔥 3. FABRICAR EL LIBRO DE CÓDIGOS DE BARRAS EN MEMORIA 🔥
+            # =================================================================
+            buffer_codigos = io.BytesIO()
+            # Margen izquierdo de 50 para poder engargolar/perforar como libro
+            doc_codigos = SimpleDocTemplate(buffer_codigos, pagesize=letter, leftMargin=50, rightMargin=15, topMargin=40, bottomMargin=15)
+            elementos_codigos = []
+            
+            style_bc_text = ParagraphStyle(name='bc', alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=8, leading=10)
+            style_bc_title = ParagraphStyle(name='bct', alignment=TA_LEFT, fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"))
+
+            db_bc = conectar_bd()
+            cursor_bc = db_bc.cursor(dictionary=True)
+            
+            try:
+                for f_val in folios_a_usar:
+                    mod_folio_nube = f"{modelo} {str(f_val).zfill(2)}"
+                    cursor_bc.execute("SELECT codigo_barras, color, talla, estampado FROM inventario WHERE modelo = %s ORDER BY estampado, talla, color", (mod_folio_nube,))
+                    cods_bd = cursor_bc.fetchall()
+                    
+                    if not cods_bd: continue
+                    
+                    estampados_unicos = list(dict.fromkeys([r['estampado'] for r in cods_bd]))
+                    
+                    for est in estampados_unicos:
+                        # Título limpio, sin decir "Códigos de Barras"
+                        elementos_codigos.append(Paragraph(f"MODELO: {modelo} &nbsp;&nbsp;&nbsp;&nbsp; ESTAMPADO: {est}", style_bc_title))
+                        elementos_codigos.append(Spacer(1, 20))
+                        
+                        cods_est = [r for r in cods_bd if r['estampado'] == est]
+                        
+                        # Fila 1: Talla CH, Fila 2: Talla M, etc.
+                        for t in tallas_usadas:
+                            cods_talla = [r for r in cods_est if r['talla'] == t]
+                            if not cods_talla: continue
+                            
+                            celdas = []
+                            for item in cods_talla:
+                                bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=1.1)
+                                txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: {t}<br/>Color: {item['color']}", style_bc_text)
+                                celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
+                                celdas.append(celda)
+                                
+                            # Agrupar en cuadrícula de 4 por fila para distribuirlos uniformemente
+                            cols_num = 4
+                            filas = [celdas[i:i+cols_num] for i in range(0, len(celdas), cols_num)]
+                            while len(filas[-1]) < cols_num: filas[-1].append("")
+                            
+                            t_bc = Table(filas, colWidths=[136]*cols_num, hAlign='LEFT')
+                            t_bc.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 15)]))
+                            
+                            elementos_codigos.append(t_bc)
+                            elementos_codigos.append(Spacer(1, 10))
+                            
+                        elementos_codigos.append(PageBreak()) 
+            except Exception as e:
+                print("Error Códigos Madre:", e)
+            finally:
+                cursor_bc.close()
+                db_bc.close()
+                
+            if not elementos_codigos:
+                elementos_codigos.append(Paragraph("Sin códigos generados.", estilos['Normal']))
+                
+            doc_codigos.build(elementos_codigos)
+            pdf_codigos_base64 = base64.b64encode(buffer_codigos.getvalue()).decode('utf-8')
+            buffer_codigos.close()
+
+            return jsonify({
+                'status': 'ok', 
+                'pdf_base64': pdf_base64, 
+                'filename': f"Gacrux_{modelo}_Produccion_{str_folios}.pdf",
+                'pdf_codigos_base64': pdf_codigos_base64,
+                'filename_codigos': f"Gacrux_{modelo}_Codigos_Produccion_{str_folios}.pdf"
+            })
 
     except Exception as e:
         error_exacto = traceback.format_exc()
@@ -1542,11 +1617,83 @@ def api_magia_pedido():
             if not elementos:
                 elementos.append(Paragraph("NO SE GENERARON DATOS. REVISA LAS TALLAS.", estilos['Normal']))
 
-            doc.build(elementos)
+            doc.build(elementos) 
             pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
             buffer.close()
 
-            return jsonify({'status': 'ok', 'pdf_base64': pdf_base64, 'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf", 'siguiente_folio': folio_arranque + 1})
+            # =================================================================
+            # 🔥 3. FABRICAR EL LIBRO DE CÓDIGOS DE BARRAS EN MEMORIA 🔥
+            # =================================================================
+            buffer_codigos = io.BytesIO()
+            doc_codigos = SimpleDocTemplate(buffer_codigos, pagesize=letter, leftMargin=50, rightMargin=15, topMargin=40, bottomMargin=15)
+            elementos_codigos = []
+            
+            style_bc_text = ParagraphStyle(name='bc', alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=8, leading=10)
+            style_bc_title = ParagraphStyle(name='bct', alignment=TA_LEFT, fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"))
+
+            db_bc = conectar_bd()
+            cursor_bc = db_bc.cursor(dictionary=True)
+            
+            try:
+                for f_val in [folio_arranque]:
+                    mod_folio_nube = f"{modelo} {str(f_val).zfill(2)}"
+                    cursor_bc.execute("SELECT codigo_barras, color, talla, estampado FROM inventario WHERE modelo = %s ORDER BY estampado, talla, color", (mod_folio_nube,))
+                    cods_bd = cursor_bc.fetchall()
+                    
+                    if not cods_bd: continue
+                    
+                    estampados_unicos = list(dict.fromkeys([r['estampado'] for r in cods_bd]))
+                    
+                    for est in estampados_unicos:
+                        elementos_codigos.append(Paragraph(f"MODELO: {modelo} &nbsp;&nbsp;&nbsp;&nbsp; ESTAMPADO: {est}", style_bc_title))
+                        elementos_codigos.append(Spacer(1, 20))
+                        
+                        cods_est = [r for r in cods_bd if r['estampado'] == est]
+                        
+                        # Fila 1: Talla CH, Fila 2: Talla M, etc.
+                        for t in tallas_activas:
+                            cods_talla = [r for r in cods_est if r['talla'] == t]
+                            if not cods_talla: continue
+                            
+                            celdas = []
+                            for item in cods_talla:
+                                bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=1.1)
+                                txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: {t}<br/>Color: {item['color']}", style_bc_text)
+                                celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
+                                celdas.append(celda)
+                                
+                            cols_num = 4
+                            filas = [celdas[i:i+cols_num] for i in range(0, len(celdas), cols_num)]
+                            while len(filas[-1]) < cols_num: filas[-1].append("")
+                            
+                            t_bc = Table(filas, colWidths=[136]*cols_num, hAlign='LEFT')
+                            t_bc.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 15)]))
+                            
+                            elementos_codigos.append(t_bc)
+                            elementos_codigos.append(Spacer(1, 10))
+                            
+                        elementos_codigos.append(PageBreak()) 
+            except Exception as e:
+                print("Error Códigos Pedido:", e)
+            finally:
+                cursor_bc.close()
+                db_bc.close()
+                
+            if not elementos_codigos:
+                elementos_codigos.append(Paragraph("Sin códigos.", estilos['Normal']))
+                
+            doc_codigos.build(elementos_codigos)
+            pdf_codigos_base64 = base64.b64encode(buffer_codigos.getvalue()).decode('utf-8')
+            buffer_codigos.close()
+
+            return jsonify({
+                'status': 'ok', 
+                'pdf_base64': pdf_base64, 
+                'filename': f"Gacrux_{modelo}_Pedido_{str(folio_arranque).zfill(2)}.pdf",
+                'pdf_codigos_base64': pdf_codigos_base64,
+                'filename_codigos': f"Gacrux_{modelo}_Codigos_Pedido_{str(folio_arranque).zfill(2)}.pdf",
+                'siguiente_folio': folio_arranque + 1
+            })
 
     except Exception as e:
         error_exacto = traceback.format_exc()
