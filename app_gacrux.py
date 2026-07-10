@@ -1143,9 +1143,12 @@ def api_magia_madre():
                         for t in tallas_usadas:
                             item = next((r for r in cods_est if r['color'] == c and r['talla'] == t), None)
                             if item:
-                                bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=bar_w)
-                                txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: <b>{t}</b><br/>Color: {item['color']}", style_bc_text)
-                                celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
+                                # Reducimos barHeight de 35 a 25 para ganar espacio vertical
+                                bc = code128.Code128(item['codigo_barras'], barHeight=25, barWidth=bar_w)
+                                # Combinamos talla y color en la misma línea usando &nbsp; para el espaciado
+                                txt = Paragraph(f"{item['codigo_barras']}<br/><b>{t}</b> &nbsp;&nbsp;&nbsp; {item['color']}", style_bc_text)
+                                # Quitamos el Spacer(1,4) para pegar el texto al código de barras
+                                celda = Table([[bc], [txt]], hAlign='CENTER')
                                 fila.append(celda)
                             else:
                                 fila.append("") # Celda vacía si este color no tiene esta talla
@@ -1155,7 +1158,8 @@ def api_magia_madre():
                     t_bc.setStyle(TableStyle([
                         ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
                         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
-                        ('BOTTOMPADDING', (0,0), (-1,-1), 15)
+                        ('TOPPADDING', (0,0), (-1,-1), 2),   # Comprime el espacio arriba
+                        ('BOTTOMPADDING', (0,0), (-1,-1), 5) # Reduce drásticamente el espacio abajo
                     ]))
                     
                     elementos_codigos.append(t_bc)
@@ -1680,9 +1684,9 @@ def api_magia_pedido():
                             for t in tallas_activas:
                                 item = next((r for r in cods_est if r['color'] == c and r['talla'] == t), None)
                                 if item:
-                                    bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=bar_w)
-                                    txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: <b>{t}</b><br/>Color: {item['color']}", style_bc_text)
-                                    celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
+                                    bc = code128.Code128(item['codigo_barras'], barHeight=25, barWidth=bar_w)
+                                    txt = Paragraph(f"{item['codigo_barras']}<br/><b>{t}</b> &nbsp;&nbsp;&nbsp; {item['color']}", style_bc_text)
+                                    celda = Table([[bc], [txt]], hAlign='CENTER')
                                     fila.append(celda)
                                 else:
                                     fila.append("") # Celda vacía si no pidieron esa talla en ese color
@@ -1691,8 +1695,9 @@ def api_magia_pedido():
                         t_bc = Table(filas_bc, colWidths=[w_col]*cols_num, hAlign='LEFT')
                         t_bc.setStyle(TableStyle([
                             ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
-                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
-                            ('BOTTOMPADDING', (0,0), (-1,-1), 15)
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                            ('TOPPADDING', (0,0), (-1,-1), 2),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 5)
                         ]))
                         
                         elementos_codigos.append(t_bc)
