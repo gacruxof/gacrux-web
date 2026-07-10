@@ -820,31 +820,53 @@ def api_magia_madre():
         total_ingresado_nube = 0; current_global_idx = 1
         mapa_bd = {"T-12": "talla_t12", "T-16": "talla_t16", "EX CH": "talla_ex_ch", "CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX G": "talla_ex_g"}
 
+        # 🔥 CARGA SÚPER RÁPIDA DE CÓDIGOS EN MEMORIA (100% SEGURO Y ANTI-COLAPSO) 🔥
+        class FastGen:
+            def __init__(self, db_cursor):
+                self.mod_c = {}; self.est_c = {}; self.col_c = {}
+                db_cursor.execute("SELECT modelo, estampado, color, codigo_barras FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'")
+                for r in db_cursor.fetchall():
+                    c_str = r['codigo_barras']
+                    if c_str[:5].isdigit(): self.mod_c[r['modelo']] = int(c_str[:5])
+                    if c_str[5:10].isdigit(): self.est_c[f"{r['modelo']}_{r['estampado']}"] = int(c_str[5:10])
+                    if c_str[10:12].isdigit(): self.col_c[f"{r['modelo']}_{r['estampado']}_{r['color']}"] = int(c_str[10:12])
+                self.n_mod = max(self.mod_c.values()) + 1 if self.mod_c else 1
+                self.n_est = max(self.est_c.values()) + 1 if self.est_c else 1
+                self.n_col = max(self.col_c.values()) + 1 if self.col_c else 1
+            def gen(self, m, e, c, t):
+                if m not in self.mod_c: self.mod_c[m] = self.n_mod; self.n_mod += 1
+                if f"{m}_{e}" not in self.est_c: self.est_c[f"{m}_{e}"] = self.n_est; self.n_est += 1
+                if f"{m}_{e}_{c}" not in self.col_c: self.col_c[f"{m}_{e}_{c}"] = self.n_col; self.n_col += 1
+                tid = {'CH': 1, 'M': 2, 'G': 3, 'XG': 4, 'EX G': 4, 'T-12': 5, 'T-16': 6, 'EG': 4}.get(t.upper(), 9)
+                return f"{self.mod_c[m]:05d}{self.est_c[f'{m}_{e}']:05d}{self.col_c[f'{m}_{e}_{c}']:02d}{tid:01d}"
+
+        if step in ['db', 'all']:
+            db_fast = conectar_bd()
+            cursor_fast = db_fast.cursor(dictionary=True)
+            fast_gen = FastGen(cursor_fast)
+            cursor_fast.close(); db_fast.close()
+
         for i_f, folio_actual in enumerate(folios_a_usar):
             estampados_del_folio = est_por_folio[i_f]; estampados_data = []
-            conteo_nombres = {} # Para rastrear duplicados en este folio
+            conteo_nombres = {}
             for est_name in estampados_del_folio:
-                # Evitar colisión de nombres duplicados en la BD
-                nombre_base = est_name
-                if nombre_base in conteo_nombres:
-                    conteo_nombres[nombre_base] += 1
-                    est_unico = f"{nombre_base} ({conteo_nombres[nombre_base]})"
+                if est_name in conteo_nombres:
+                    conteo_nombres[est_name] += 1
+                    est_unico = f"{est_name} ({conteo_nombres[est_name]})"
                 else:
-                    conteo_nombres[nombre_base] = 1
-                    est_unico = nombre_base
-                
-                estampados_data.append({"nombre": est_unico, "nombre_visual": nombre_base, "filas": [], "global_idx": current_global_idx}); current_global_idx += 1
+                    conteo_nombres[est_name] = 1
+                    est_unico = est_name
+                estampados_data.append({"nombre": est_unico, "nombre_visual": est_name, "filas": [], "global_idx": current_global_idx})
+                current_global_idx += 1
                 
             modelo_folio_nube = f"{modelo} {str(folio_actual).zfill(2)}"
             
-            # 🔥 NUEVO: Rastreador de equidad para este folio (Evita el 16, 10, 10) 🔥
-            estado_reparto = {t: 0 for t in tallas_usadas} 
-            
+            # 🔥 REPARTO CIRCULAR PERFECTO (EVITA 16, 10, 10) 🔥
+            estado_reparto = {t: 0 for t in tallas_usadas}
             for fila_corte in datos_corte:
                 c = fila_corte["color"]; reparto_por_talla = {t: [] for t in tallas_usadas}
                 for t in tallas_usadas:
                     total_corte = fila_corte["totales_talla"][t]
-                    # Reparto exacto entre folios sin perder piezas
                     base_folio = total_corte // num_folios
                     sobra_folio = total_corte % num_folios
                     total_folio = base_folio + 1 if i_f < sobra_folio else base_folio
@@ -852,7 +874,6 @@ def api_magia_madre():
                     num_est_folio = len(estampados_data)
                     if num_est_folio > 0:
                         reparto_por_talla[t] = [0] * num_est_folio
-                        # Repartir una a una (como cartas) para equidad total
                         for _ in range(total_folio):
                             reparto_por_talla[t][estado_reparto[t]] += 1
                             estado_reparto[t] = (estado_reparto[t] + 1) % num_est_folio
@@ -868,36 +889,9 @@ def api_magia_madre():
             if step in ['db', 'all']:
                 db = conectar_bd(); cursor = db.cursor(dictionary=True)
                 try:
-                    # 🔥 SISTEMA ANTI-COLAPSO: Memoria Caché de Códigos 🔥
-                    cache_ids = {'mod': {}, 'est': {}, 'col': {}}
-                    cursor.execute("SELECT modelo, SUBSTRING(codigo_barras, 1, 5) as mod_id FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' GROUP BY modelo")
-                    for r in cursor.fetchall(): cache_ids['mod'][r['modelo']] = int(r['mod_id'])
-                    
-                    cursor.execute("SELECT modelo, estampado, SUBSTRING(codigo_barras, 6, 5) as est_id FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' GROUP BY modelo, estampado")
-                    for r in cursor.fetchall(): cache_ids['est'][f"{r['modelo']}_{r['estampado']}"] = int(r['est_id'])
-                    
-                    cursor.execute("SELECT modelo, estampado, color, SUBSTRING(codigo_barras, 11, 2) as col_id FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750' GROUP BY modelo, estampado, color")
-                    for r in cursor.fetchall(): cache_ids['col'][f"{r['modelo']}_{r['estampado']}_{r['color']}"] = int(r['col_id'])
-                    
-                    cursor.execute("SELECT MAX(CAST(SUBSTRING(codigo_barras, 1, 5) AS UNSIGNED)) AS m1, MAX(CAST(SUBSTRING(codigo_barras, 6, 5) AS UNSIGNED)) AS m2, MAX(CAST(SUBSTRING(codigo_barras, 11, 2) AS UNSIGNED)) AS m3 FROM inventario WHERE LENGTH(codigo_barras) = 13 AND LEFT(codigo_barras, 3) != '750'")
-                    rmax = cursor.fetchone()
-                    cache_ids['next_mod'] = int(rmax['m1'] or 0) + 1 if rmax else 1
-                    cache_ids['next_est'] = int(rmax['m2'] or 0) + 1 if rmax else 1
-                    cache_ids['next_col'] = int(rmax['m3'] or 0) + 1 if rmax else 1
-
-                    # Generador de códigos en milisegundos (0 consultas a la BD)
-                    def generar_codigo_rapido(mod, est, col, tal):
-                        if mod not in cache_ids['mod']:
-                            cache_ids['mod'][mod] = cache_ids['next_mod']; cache_ids['next_mod'] += 1
-                        if f"{mod}_{est}" not in cache_ids['est']:
-                            cache_ids['est'][f"{mod}_{est}"] = cache_ids['next_est']; cache_ids['next_est'] += 1
-                        if f"{mod}_{est}_{col}" not in cache_ids['col']:
-                            cache_ids['col'][f"{mod}_{est}_{col}"] = cache_ids['next_col']; cache_ids['next_col'] += 1
-                        tid = {'CH': 1, 'M': 2, 'G': 3, 'XG': 4, 'EX G': 4, 'T-12': 5, 'T-16': 6, 'EG': 4}.get(tal.upper(), 9)
-                        return f"{cache_ids['mod'][mod]:05d}{cache_ids['est'][f'{mod}_{est}']:05d}{cache_ids['col'][f'{mod}_{est}_{col}']:02d}{tid:01d}"
-
+                    nuevos_codigos = []
                     for est_item in estampados_data:
-                        est_nombre = est_item["nombre"]
+                        est_nombre = est_item["nombre"] # Internamente usa "HB (2)" para evitar mezclas
                         for fila in est_item["filas"]:
                             c = fila["color"]
                             cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, est_nombre, c))
@@ -916,24 +910,20 @@ def api_magia_madre():
                                                (modelo_folio_nube, est_nombre, c, v_stock["talla_t12"], v_stock["talla_t16"], v_stock["talla_ex_ch"], v_stock["talla_ch"], v_stock["talla_m"], v_stock["talla_g"], v_stock["talla_ex_g"]))
                                 panel_id = cursor.lastrowid
 
-                            # 🔥 CANDADO DE INSERCIÓN MASIVA (Más de 10x más rápido) 🔥
-                            nuevos_codigos = []
                             for t in tallas_usadas:
                                 if fila["tallas"][t] > 0:
-                                    cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, est_nombre, c, t))
-                                    if not cursor.fetchone():
-                                        cod = generar_codigo_rapido(modelo_folio_nube, est_nombre, c, t)
-                                        nuevos_codigos.append((cod, modelo_folio_nube, est_nombre, c, t, panel_id))
-                            
-                            if nuevos_codigos:
-                                cursor.executemany("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", nuevos_codigos)
+                                    cod = fast_gen.gen(modelo_folio_nube, est_nombre, c, t)
+                                    nuevos_codigos.append((cod, modelo_folio_nube, est_nombre, c, t, panel_id))
                     
+                    if nuevos_codigos:
+                        cursor.executemany("INSERT IGNORE INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", nuevos_codigos)
+                        
                     if total_ingresado_nube > 0:
                         cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE', 'SISTEMA')", 
                                        (modelo, total_ingresado_nube, fecha_txt))
+                        total_ingresado_nube = 0 # Limpiamos para el próximo folio
+                        
                     cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folios_a_usar[-1] + 1, modelo))
-                    
-                    # 🔥 CANDADO DE SEGURIDAD: Guarda la BD un folio a la vez 🔥
                     db.commit()
                 except Exception as e:
                     db.rollback(); raise e
