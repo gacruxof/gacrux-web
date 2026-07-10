@@ -225,8 +225,8 @@ HTML_BASE = """
 </head>
 <body>
     <header>
-        <div class="logo-title">🚀 GACRUX</div>
-        <div onclick="window.location.href='/logout'" class="profile-btn" title="Cerrar Sesión">🚪</div>
+        <div class="logo-title">⭐ GACRUX</div>
+        <div onclick="window.location.href='/logout'" class="profile-btn" title="Cerrar Sesión">👤</div>
     </header>
 
     <div class="container">
