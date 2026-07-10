@@ -1180,7 +1180,9 @@ def api_magia_madre():
             'pdf_codigos_base64': pdf_codigos_base64,
             'filename_codigos': f"Gacrux_{modelo}_Codigos_Produccion_{str_folios}.pdf"
         })
-
+    except Exception as e:
+    return jsonify({'error': str(e)})
+    
 @app.route('/api/app/magia_pedido', methods=['POST'])
 def api_magia_pedido():
     try:
