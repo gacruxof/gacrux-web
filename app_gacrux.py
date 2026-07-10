@@ -822,8 +822,18 @@ def api_magia_madre():
 
         for i_f, folio_actual in enumerate(folios_a_usar):
             estampados_del_folio = est_por_folio[i_f]; estampados_data = []
+            conteo_nombres = {} # Para rastrear duplicados en este folio
             for est_name in estampados_del_folio:
-                estampados_data.append({"nombre": est_name, "filas": [], "global_idx": current_global_idx}); current_global_idx += 1
+                # Evitar colisión de nombres duplicados en la BD
+                nombre_base = est_name
+                if nombre_base in conteo_nombres:
+                    conteo_nombres[nombre_base] += 1
+                    est_unico = f"{nombre_base} ({conteo_nombres[nombre_base]})"
+                else:
+                    conteo_nombres[nombre_base] = 1
+                    est_unico = nombre_base
+                
+                estampados_data.append({"nombre": est_unico, "nombre_visual": nombre_base, "filas": [], "global_idx": current_global_idx}); current_global_idx += 1
                 
             modelo_folio_nube = f"{modelo} {str(folio_actual).zfill(2)}"
             for fila_corte in datos_corte:
@@ -1011,7 +1021,7 @@ def api_magia_madre():
 
                     tablas_estampados = []
                     for est_item in lote_estampados:
-                        est_nombre = est_item["nombre"]; filas_colores = est_item["filas"]; global_idx = est_item["global_idx"]
+                        est_nombre = est_item["nombre_visual"]; filas_colores = est_item["filas"]; global_idx = est_item["global_idx"] # Usar nombre_visual aquí
                         title_text = f"<font color='#3b82f6'>▐</font> <b>ESTAMPADO {global_idx}: {est_nombre}</b>"
                         title = Paragraph(title_text, t_title)
                         
