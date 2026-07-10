@@ -1092,10 +1092,10 @@ def api_magia_madre():
         pdf_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         buffer.close()
 
-            # =================================================================
-            # 🔥 3. FABRICAR EL LIBRO DE CÓDIGOS DE BARRAS EN MEMORIA 🔥
-            # =================================================================
-            buffer_codigos = io.BytesIO()
+        # =================================================================
+        # 🔥 3. FABRICAR EL LIBRO DE CÓDIGOS DE BARRAS EN MEMORIA 🔥
+        # =================================================================
+        buffer_codigos = io.BytesIO()
             # Margen izquierdo de 50 para poder engargolar/perforar como libro
             doc_codigos = SimpleDocTemplate(buffer_codigos, pagesize=letter, leftMargin=50, rightMargin=15, topMargin=40, bottomMargin=15)
             elementos_codigos = []
