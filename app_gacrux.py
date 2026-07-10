@@ -1096,90 +1096,90 @@ def api_magia_madre():
         # 🔥 3. FABRICAR EL LIBRO DE CÓDIGOS DE BARRAS EN MEMORIA 🔥
         # =================================================================
         buffer_codigos = io.BytesIO()
-            # Margen izquierdo de 50 para poder engargolar/perforar como libro
-            doc_codigos = SimpleDocTemplate(buffer_codigos, pagesize=letter, leftMargin=50, rightMargin=15, topMargin=40, bottomMargin=15)
-            elementos_codigos = []
-            
-            style_bc_text = ParagraphStyle(name='bc', alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=8, leading=10)
-            style_bc_title = ParagraphStyle(name='bct', alignment=TA_LEFT, fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"))
+        # Margen izquierdo de 50 para poder engargolar/perforar como libro
+        doc_codigos = SimpleDocTemplate(buffer_codigos, pagesize=letter, leftMargin=50, rightMargin=15, topMargin=40, bottomMargin=15)
+        elementos_codigos = []
+        
+        style_bc_text = ParagraphStyle(name='bc', alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=8, leading=10)
+        style_bc_title = ParagraphStyle(name='bct', alignment=TA_LEFT, fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"))
 
-            db_bc = conectar_bd()
-            cursor_bc = db_bc.cursor(dictionary=True)
-            
-            try:
-                for f_val in folios_a_usar:
-                    mod_folio_nube = f"{modelo} {str(f_val).zfill(2)}"
-                    cursor_bc.execute("SELECT codigo_barras, color, talla, estampado FROM inventario WHERE modelo = %s ORDER BY estampado, talla, color", (mod_folio_nube,))
-                    cods_bd = cursor_bc.fetchall()
-                    
-                    if not cods_bd: continue
-                    
-                    estampados_unicos = list(dict.fromkeys([r['estampado'] for r in cods_bd]))
-                    
-                    for est in estampados_unicos:
-                        elementos_codigos.append(Paragraph(f"MODELO: {modelo} &nbsp;&nbsp;&nbsp;&nbsp; ESTAMPADO: {est}", style_bc_title))
-                        elementos_codigos.append(Spacer(1, 20))
-                        
-                        cods_est = [r for r in cods_bd if r['estampado'] == est]
-                        colores_unicos = list(dict.fromkeys([r['color'] for r in cods_est]))
-                        
-                        # 🔥 COLUMNAS = TALLAS, FILAS = COLORES 🔥
-                        cols_num = len(tallas_usadas) if tallas_usadas else 1
-                        w_col = 547 / cols_num
-                        
-                        # Auto-ajuste del ancho de la barra para que nunca se encimen si son muchas tallas
-                        bar_w = 1.2
-                        if cols_num >= 7: bar_w = 0.4
-                        elif cols_num == 6: bar_w = 0.5
-                        elif cols_num == 5: bar_w = 0.6
-                        elif cols_num == 4: bar_w = 0.8
-                        elif cols_num == 3: bar_w = 1.0
-                        elif cols_num == 2: bar_w = 1.3
-
-                        filas_bc = []
-                        
-                        for c in colores_unicos:
-                            fila = []
-                            for t in tallas_usadas:
-                                item = next((r for r in cods_est if r['color'] == c and r['talla'] == t), None)
-                                if item:
-                                    bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=bar_w)
-                                    txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: <b>{t}</b><br/>Color: {item['color']}", style_bc_text)
-                                    celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
-                                    fila.append(celda)
-                                else:
-                                    fila.append("") # Celda vacía si este color no tiene esta talla
-                            filas_bc.append(fila)
-                            
-                        t_bc = Table(filas_bc, colWidths=[w_col]*cols_num, hAlign='LEFT')
-                        t_bc.setStyle(TableStyle([
-                            ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
-                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
-                            ('BOTTOMPADDING', (0,0), (-1,-1), 15)
-                        ]))
-                        
-                        elementos_codigos.append(t_bc)
-                        elementos_codigos.append(PageBreak()) 
-            except Exception as e:
-                print("Error Códigos Madre:", e)
-            finally:
-                cursor_bc.close()
-                db_bc.close()
+        db_bc = conectar_bd()
+        cursor_bc = db_bc.cursor(dictionary=True)
+        
+        try:
+            for f_val in folios_a_usar:
+                mod_folio_nube = f"{modelo} {str(f_val).zfill(2)}"
+                cursor_bc.execute("SELECT codigo_barras, color, talla, estampado FROM inventario WHERE modelo = %s ORDER BY estampado, talla, color", (mod_folio_nube,))
+                cods_bd = cursor_bc.fetchall()
                 
-            if not elementos_codigos:
-                elementos_codigos.append(Paragraph("Sin códigos generados.", estilos['Normal']))
+                if not cods_bd: continue
                 
-            doc_codigos.build(elementos_codigos)
-            pdf_codigos_base64 = base64.b64encode(buffer_codigos.getvalue()).decode('utf-8')
-            buffer_codigos.close()
+                estampados_unicos = list(dict.fromkeys([r['estampado'] for r in cods_bd]))
+                
+                for est in estampados_unicos:
+                    elementos_codigos.append(Paragraph(f"MODELO: {modelo} &nbsp;&nbsp;&nbsp;&nbsp; ESTAMPADO: {est}", style_bc_title))
+                    elementos_codigos.append(Spacer(1, 20))
+                    
+                    cods_est = [r for r in cods_bd if r['estampado'] == est]
+                    colores_unicos = list(dict.fromkeys([r['color'] for r in cods_est]))
+                    
+                    # 🔥 COLUMNAS = TALLAS, FILAS = COLORES 🔥
+                    cols_num = len(tallas_usadas) if tallas_usadas else 1
+                    w_col = 547 / cols_num
+                    
+                    # Auto-ajuste del ancho de la barra para que nunca se encimen si son muchas tallas
+                    bar_w = 1.2
+                    if cols_num >= 7: bar_w = 0.4
+                    elif cols_num == 6: bar_w = 0.5
+                    elif cols_num == 5: bar_w = 0.6
+                    elif cols_num == 4: bar_w = 0.8
+                    elif cols_num == 3: bar_w = 1.0
+                    elif cols_num == 2: bar_w = 1.3
 
-            return jsonify({
-                'status': 'ok', 
-                'pdf_base64': pdf_base64, 
-                'filename': f"Gacrux_{modelo}_Produccion_{str_folios}.pdf",
-                'pdf_codigos_base64': pdf_codigos_base64,
-                'filename_codigos': f"Gacrux_{modelo}_Codigos_Produccion_{str_folios}.pdf"
-            })
+                    filas_bc = []
+                    
+                    for c in colores_unicos:
+                        fila = []
+                        for t in tallas_usadas:
+                            item = next((r for r in cods_est if r['color'] == c and r['talla'] == t), None)
+                            if item:
+                                bc = code128.Code128(item['codigo_barras'], barHeight=35, barWidth=bar_w)
+                                txt = Paragraph(f"{item['codigo_barras']}<br/>Talla: <b>{t}</b><br/>Color: {item['color']}", style_bc_text)
+                                celda = Table([[bc], [Spacer(1,4)], [txt]], hAlign='CENTER')
+                                fila.append(celda)
+                            else:
+                                fila.append("") # Celda vacía si este color no tiene esta talla
+                        filas_bc.append(fila)
+                        
+                    t_bc = Table(filas_bc, colWidths=[w_col]*cols_num, hAlign='LEFT')
+                    t_bc.setStyle(TableStyle([
+                        ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
+                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
+                        ('BOTTOMPADDING', (0,0), (-1,-1), 15)
+                    ]))
+                    
+                    elementos_codigos.append(t_bc)
+                    elementos_codigos.append(PageBreak()) 
+        except Exception as e:
+            print("Error Códigos Madre:", e)
+        finally:
+            cursor_bc.close()
+            db_bc.close()
+            
+        if not elementos_codigos:
+            elementos_codigos.append(Paragraph("Sin códigos generados.", estilos['Normal']))
+            
+        doc_codigos.build(elementos_codigos)
+        pdf_codigos_base64 = base64.b64encode(buffer_codigos.getvalue()).decode('utf-8')
+        buffer_codigos.close()
+
+        return jsonify({
+            'status': 'ok', 
+            'pdf_base64': pdf_base64, 
+            'filename': f"Gacrux_{modelo}_Produccion_{str_folios}.pdf",
+            'pdf_codigos_base64': pdf_codigos_base64,
+            'filename_codigos': f"Gacrux_{modelo}_Codigos_Produccion_{str_folios}.pdf"
+        })
 
 @app.route('/api/app/magia_pedido', methods=['POST'])
 def api_magia_pedido():
