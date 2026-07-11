@@ -862,20 +862,23 @@ def api_magia_madre():
                 
             modelo_folio_nube = f"{modelo} {str(folio_actual).zfill(2)}"
             
-            # 🔥 REPARTO CIRCULAR PERFECTO (EVITA 16, 10, 10) 🔥
-            estado_reparto = {t: 0 for t in tallas_usadas}
+            # 🔥 REPARTO MATEMÁTICO CIRCULAR (EVITA INVERSIONES Y DESIGUALDADES) 🔥
             for fila_corte in datos_corte:
                 c = fila_corte["color"]; reparto_por_talla = {t: [] for t in tallas_usadas}
+                estado_reparto = {t: 0 for t in tallas_usadas} # Se reinicia por color para igualar matemáticas
+                
                 for t in tallas_usadas:
-                    total_corte = fila_corte["totales_talla"][t]
-                    base_folio = total_corte // num_folios
-                    sobra_folio = total_corte % num_folios
-                    total_folio = base_folio + 1 if i_f < sobra_folio else base_folio
-                    
+                    total_corte = fila_corte["totales_talla"][t]; total_folio = total_corte // num_folios
                     num_est_folio = len(estampados_data)
+                    
                     if num_est_folio > 0:
                         reparto_por_talla[t] = [0] * num_est_folio
-                        for _ in range(total_folio):
+                        # Calculamos si a este folio le toca absorber piezas sobrantes
+                        sobra_folio = total_corte % num_folios
+                        total_folio_final = total_folio + 1 if i_f < sobra_folio else total_folio
+                        
+                        # Repartimos 1 por 1 a los estampados
+                        for _ in range(total_folio_final):
                             reparto_por_talla[t][estado_reparto[t]] += 1
                             estado_reparto[t] = (estado_reparto[t] + 1) % num_est_folio
                             
