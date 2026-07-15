@@ -1342,6 +1342,10 @@ def api_magia_pedido():
             combos = get_combos(len(grupo_tallas))
             if not combos: return float('inf'), float('inf'), {}, {}, {}
             
+            # 🔥 Límite del 8% de Ineficiencia para este grupo específico 🔥
+            tot_ped_grupo = sum(safe_int(pedidos_app.get(c, {}).get(t, 0)) for c in colores_activos for t in grupo_tallas)
+            limite_score = tot_ped_grupo * 0.08
+            
             for combo in combos:
                 cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
                 lienzos_c = {}; lisos_tomar_c = {}; score_combo = 0; faltantes_combo = 0; tot_l = 0
@@ -1358,7 +1362,6 @@ def api_magia_pedido():
                     best_l = max_l; best_score_l = float('inf'); best_f_l = float('inf')
                     best_lisos_l = {t: 0 for t in grupo_tallas}
                     
-                    # La IA explora tirar menos lienzos y parchar el hueco con Lisos
                     for l in range(max(1, max_l - 4), max_l + 2):
                         f_local = 0; s_local = 0; invalido = False; lisos_usados = {}
                         
@@ -1370,15 +1373,15 @@ def api_magia_pedido():
                             tomados = 0
                             if diff > 0:
                                 max_disp = sum(row[mapa_bd[t.upper()]] for row in lisos_disp[c][t])
-                                tomados = min(diff, max_disp) # Toma solo lo necesario para llegar al pedido
+                                tomados = min(diff, max_disp) 
                                 faltante_real = diff - tomados
                                 
-                                # Reglas de balanceo Jefes: CH y M intactas, demás máximo -1 prenda
+                                # Reglas de balanceo: CH y M intactas, demás máximo -1 prenda
                                 if faltante_real > 0:
                                     if t in ["CH", "M"] or faltante_real > 1: invalido = True; break
                                 f_local += faltante_real
                             else:
-                                s_local += abs(diff) # Es un sobrante
+                                s_local += abs(diff)
                                 
                             lisos_usados[t] = tomados
                             
@@ -1392,7 +1395,26 @@ def api_magia_pedido():
                         
                     lienzos_c[c] = best_l; tot_l += best_l; score_combo += best_score_l; faltantes_combo += best_f_l; lisos_tomar_c[c] = best_lisos_l
                     
-                if score_combo < best_score or (score_combo == best_score and faltantes_combo < best_faltantes) or (score_combo == best_score and faltantes_combo == best_faltantes and tot_l < best_lienzos_total):
+                # 🔥 LA NUEVA MENTE: PRIORIZAR MÁS CUERPOS SI SE RESPETA EL 8% 🔥
+                es_aceptable = score_combo <= limite_score
+                best_es_aceptable = best_score <= limite_score
+                
+                es_mejor = False
+                if es_aceptable and best_es_aceptable:
+                    # Ambos respetan el 8%, gana el que use MENOS lienzos (significa que usa MÁS cuerpos)
+                    if tot_l < best_lienzos_total: es_mejor = True
+                    elif tot_l == best_lienzos_total:
+                        # Si empatan en lienzos, gana el de menos desperdicio
+                        if score_combo < best_score: es_mejor = True
+                        elif score_combo == best_score and faltantes_combo < best_faltantes: es_mejor = True
+                elif es_aceptable and not best_es_aceptable:
+                    es_mejor = True # Gana automáticamente por estar bajo el 8%
+                elif not es_aceptable and not best_es_aceptable:
+                    # Ninguno respeta el 8%, gana el menos "malo" (menor desperdicio)
+                    if score_combo < best_score: es_mejor = True
+                    elif score_combo == best_score and faltantes_combo < best_faltantes: es_mejor = True
+                    
+                if es_mejor:
                     best_score = score_combo; best_faltantes = faltantes_combo; best_lienzos_total = tot_l
                     best_cuerpos = cuerpos; best_lienzos_color = lienzos_c; best_lisos_tomar = lisos_tomar_c
                     
@@ -1404,6 +1426,7 @@ def api_magia_pedido():
             score, tl, c, l, lisos = calcular_optimizacion(grupo)
             tot_ped = sum(safe_int(pedidos_app.get(col, {}).get(t, 0)) for col in colores_activos for t in grupo)
             
+            # 🔥 OBLIGA A AGRUPAR SI EL GRUPO ENTERO ESTÁ BAJO EL 8% 🔥
             if n == 1 or (tot_ped > 0 and score <= (tot_ped * 0.08)): return [(grupo, c, l, lisos)]
             mid = n // 2
             return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
