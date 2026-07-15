@@ -1292,48 +1292,6 @@ def api_magia_pedido():
         pedidos_app = req.get('pedidos', {}) 
         folio_arranque = safe_int(req.get('folio_arranque', 1))
         fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
-        # ====================================================================
-        # 🔥 NUEVO: SISTEMA DE BÚSQUEDA Y CONSUMO DE LISOS EXISTENTES 🔥
-        # ====================================================================
-        piezas_tomadas_info = []
-        deducciones_db = []
-        
-        db_liso = conectar_bd()
-        cursor_liso = db_liso.cursor(dictionary=True)
-        mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
-        
-        for c, t_data in pedidos_app.items():
-            for t, cant in list(t_data.items()):
-                cant_necesaria = safe_int(cant)
-                if cant_necesaria > 0:
-                    col_sql = mapa_bd.get(t.upper())
-                    if not col_sql: continue
-                    
-                    # Definimos el nombre exacto del folio actual para excluirlo de la búsqueda
-                    modelo_actual = f"{modelo} {str(folio_arranque).zfill(2)}"
-                    
-                    # Buscar inventario LISO excluyendo el folio que se está creando en este momento (!=)
-                    query = f"SELECT id, modelo, {col_sql} FROM panel_stock WHERE modelo LIKE %s AND modelo != %s AND estampado IN ('LISO', 'LISA') AND color=%s AND {col_sql} > 0 ORDER BY id ASC"
-                    cursor_liso.execute(query, (f"{modelo} %", modelo_actual, c))
-                    disponibles = cursor_liso.fetchall()
-                    
-                    for row in disponibles:
-                        if cant_necesaria <= 0: break
-                        stock_actual = row[col_sql]
-                        tomar = min(stock_actual, cant_necesaria)
-                        
-                        deducciones_db.append((tomar, row['id'], col_sql, row['modelo'], c, t))
-                        piezas_tomadas_info.append(f"• Se apartaron {tomar} pz. Talla {t} ({c}) del {row['modelo']}")
-                        
-                        cant_necesaria -= tomar
-                        
-                    # Actualizamos el pedido restando lo que ya encontramos
-                    # Así la IA matemática solo calculará el corte para lo que realmente falta
-                    pedidos_app[c][t] = cant_necesaria 
-                    
-        cursor_liso.close()
-        db_liso.close()
-        # ====================================================================
 
         tallas_activas = set(); colores_activos = set()
         for c, t_data in pedidos_app.items():
@@ -1343,104 +1301,145 @@ def api_magia_pedido():
         orden_tallas = {"T-12":1, "T-16":2, "EX CH":3, "CH":4, "M":5, "G":6, "EX G":7}
         tallas_activas.sort(key=lambda x: orden_tallas.get(x, 99))
 
-        def total_pedido_grupo(grupo): 
-            return sum(safe_int(t_data.get(t, 0)) for c, t_data in pedidos_app.items() for t in grupo)
-
-        # 🔥 LA NUEVA IA MATEMÁTICA: CREA COMBINACIONES 100% SEGURAS (LÍMITE EXACTO DE 6 CUERPOS) 🔥
         def get_combos(n):
             combos = []
             def search(path, current_sum):
                 if len(path) == n:
-                    if current_sum <= 6:
-                        combos.append(path)
+                    if current_sum <= 6: combos.append(path)
                     return
                 min_needed_for_rest = n - 1 - len(path)
                 max_val = 6 - current_sum - min_needed_for_rest
-                if max_val < 1:
-                    return
-                for i in range(1, max_val + 1):
-                    search(path + [i], current_sum + i)
+                if max_val < 1: return
+                for i in range(1, max_val + 1): search(path + [i], current_sum + i)
             search([], 0)
             return combos
 
-        def calcular_desperdicio(grupo_tallas):
-            best_waste = float('inf')
-            best_lienzos_total = float('inf')
-            best_cuerpos = {}
-            best_lienzos_color = {}
+        # ====================================================================
+        # 🔥 FASE 1: MAPEAR INVENTARIO DE COMODINES (SIN DESCONTAR AÚN) 🔥
+        # ====================================================================
+        lisos_disp = {c: {t: [] for t in tallas_activas} for c in colores_activos}
+        db_liso = conectar_bd()
+        cursor_liso = db_liso.cursor(dictionary=True)
+        mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
+        
+        for c in colores_activos:
+            for t in tallas_activas:
+                col_sql = mapa_bd.get(t.upper())
+                if not col_sql: continue
+                modelo_actual = f"{modelo} {str(folio_arranque).zfill(2)}"
+                query = f"SELECT id, modelo, {col_sql} FROM panel_stock WHERE modelo LIKE %s AND modelo != %s AND estampado IN ('LISO', 'LISA') AND color=%s AND {col_sql} > 0 ORDER BY id ASC"
+                cursor_liso.execute(query, (f"{modelo} %", modelo_actual, c))
+                lisos_disp[c][t] = cursor_liso.fetchall()
+        cursor_liso.close(); db_liso.close()
+
+        # ====================================================================
+        # 🔥 FASE 2: CEREBRO CUÁNTICO INTEGRADO (LIENZOS + CUERPOS + LISOS) 🔥
+        # ====================================================================
+        def calcular_optimizacion(grupo_tallas):
+            best_score = float('inf'); best_faltantes = float('inf'); best_lienzos_total = float('inf')
+            best_cuerpos = {}; best_lienzos_color = {}; best_lisos_tomar = {}
             
             combos = get_combos(len(grupo_tallas))
-            if not combos: 
-                return float('inf'), float('inf'), {}, {}
+            if not combos: return float('inf'), float('inf'), {}, {}, {}
             
             for combo in combos:
                 cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
-                lienzos_color = {}
-                waste = 0
-                tot_l = 0
-                es_invalido = False # Bandera para descartar combos que dejen faltantes no permitidos
+                lienzos_c = {}; lisos_tomar_c = {}; score_combo = 0; faltantes_combo = 0; tot_l = 0
                 
-                for c, peds in pedidos_app.items():
-                    min_l_needed = 0
+                for c in colores_activos:
+                    max_l = 0
                     for t in grupo_tallas:
-                        ped = safe_int(peds.get(t, 0))
-                        if ped > 0:
-                            # 🔥 LA REGLA DE BALANCEO DE LOS JEFES 🔥
-                            if t not in ["CH", "M"]:
-                                # Permite un faltante exacto de 1 prenda
-                                l_req = math.ceil((ped - 1) / cuerpos[t])
-                            else:
-                                # CH y M se deben completar o sobrar, NUNCA faltar
-                                l_req = math.ceil(ped / cuerpos[t])
+                        ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
+                        if ped > 0 and cuerpos[t] > 0: max_l = max(max_l, math.ceil(ped / cuerpos[t]))
                             
-                            if l_req > min_l_needed:
-                                min_l_needed = l_req
-                    
-                    lienzos_color[c] = min_l_needed
-                    tot_l += min_l_needed
-                    
-                    # Calcular el desperdicio real de este color
-                    for t in grupo_tallas:
-                        ped = safe_int(peds.get(t, 0))
-                        prod = min_l_needed * cuerpos[t]
-                        faltante = ped - prod
+                    if max_l == 0: 
+                        lienzos_c[c] = 0; lisos_tomar_c[c] = {t: 0 for t in grupo_tallas}; continue
                         
-                        if faltante > 0:
-                            if faltante == 1 and t not in ["CH", "M"]:
-                                pass # ✅ Balanceo exitoso, se permite y NO cuenta como desperdicio
-                            else:
-                                es_invalido = True # ❌ Faltante no permitido, descartar combo
-                        elif prod > ped:
-                            waste += (prod - ped) # Sobrante real
-        
-                if es_invalido:
-                    continue # Saltamos este combo porque no cumple las reglas de producción
-        
-                # Priorizamos: Menor cantidad de lienzos (para usar más cuerpos) y luego menor desperdicio
-                if tot_l < best_lienzos_total or (tot_l == best_lienzos_total and waste < best_waste):
-                    best_lienzos_total = tot_l
-                    best_waste = waste
-                    best_cuerpos = cuerpos
-                    best_lienzos_color = lienzos_color
+                    best_l = max_l; best_score_l = float('inf'); best_f_l = float('inf')
+                    best_lisos_l = {t: 0 for t in grupo_tallas}
                     
-            return best_waste, best_lienzos_total, best_cuerpos, best_lienzos_color
+                    # La IA explora tirar menos lienzos y parchar el hueco con Lisos
+                    for l in range(max(1, max_l - 4), max_l + 2):
+                        f_local = 0; s_local = 0; invalido = False; lisos_usados = {}
+                        
+                        for t in grupo_tallas:
+                            ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
+                            prod = l * cuerpos[t]
+                            diff = ped - prod
+                            
+                            tomados = 0
+                            if diff > 0:
+                                max_disp = sum(row[mapa_bd[t.upper()]] for row in lisos_disp[c][t])
+                                tomados = min(diff, max_disp) # Toma solo lo necesario para llegar al pedido
+                                faltante_real = diff - tomados
+                                
+                                # Reglas de balanceo Jefes: CH y M intactas, demás máximo -1 prenda
+                                if faltante_real > 0:
+                                    if t in ["CH", "M"] or faltante_real > 1: invalido = True; break
+                                f_local += faltante_real
+                            else:
+                                s_local += abs(diff) # Es un sobrante
+                                
+                            lisos_usados[t] = tomados
+                            
+                        if not invalido:
+                            puntaje = f_local + s_local
+                            if puntaje < best_score_l or (puntaje == best_score_l and f_local < best_f_l):
+                                best_score_l = puntaje; best_f_l = f_local; best_l = l; best_lisos_l = lisos_usados
+                                
+                    if best_score_l == float('inf'):
+                        best_l = max_l; best_score_l = sum(max_l * cuerpos[t] - safe_int(pedidos_app.get(c, {}).get(t, 0)) for t in grupo_tallas); best_f_l = 0; best_lisos_l = {t: 0 for t in grupo_tallas}
+                        
+                    lienzos_c[c] = best_l; tot_l += best_l; score_combo += best_score_l; faltantes_combo += best_f_l; lisos_tomar_c[c] = best_lisos_l
+                    
+                if score_combo < best_score or (score_combo == best_score and faltantes_combo < best_faltantes) or (score_combo == best_score and faltantes_combo == best_faltantes and tot_l < best_lienzos_total):
+                    best_score = score_combo; best_faltantes = faltantes_combo; best_lienzos_total = tot_l
+                    best_cuerpos = cuerpos; best_lienzos_color = lienzos_c; best_lisos_tomar = lisos_tomar_c
+                    
+            return best_score, best_lienzos_total, best_cuerpos, best_lienzos_color, best_lisos_tomar
 
-        # 🔥 LA NUEVA IA: DECIDE CÓMO PARTIR LAS TALLAS EN HOJAS DE CORTE 🔥
         def particionar_tallas(grupo):
             if not grupo: return []
             n = len(grupo)
-            w, tl, c, l = calcular_desperdicio(grupo)
-            tot_ped = total_pedido_grupo(grupo)
+            score, tl, c, l, lisos = calcular_optimizacion(grupo)
+            tot_ped = sum(safe_int(pedidos_app.get(col, {}).get(t, 0)) for col in colores_activos for t in grupo)
             
-            # Si logramos <= 8% de sobrantes, o si ya solo queda 1 talla (no se puede dividir más)
-            if n == 1 or (tot_ped > 0 and w <= (tot_ped * 0.08)):
-                return [(grupo, c, l)]
-                
-            # Si rompe la regla del 8%, lo partimos a la mitad obligatoriamente
+            if n == 1 or (tot_ped > 0 and score <= (tot_ped * 0.08)): return [(grupo, c, l, lisos)]
             mid = n // 2
             return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
 
-        particiones = particionar_tallas(tallas_activas)
+        particiones_inteligentes = particionar_tallas(tallas_activas)
+
+        # ====================================================================
+        # 🔥 FASE 3: EJECUTAR EL PLAN MAESTRO Y DESCONTAR LISOS 🔥
+        # ====================================================================
+        piezas_tomadas_info = []
+        deducciones_db = []
+        particiones = [] # Limpiamos para el PDF
+        
+        for grupo, cuerpos, lienzos, lisos_tomar in particiones_inteligentes:
+            for c in colores_activos:
+                for t in grupo:
+                    cant_tomar = lisos_tomar.get(c, {}).get(t, 0)
+                    if cant_tomar > 0:
+                        col_sql = mapa_bd[t.upper()]
+                        por_tomar = cant_tomar
+                        for row in lisos_disp[c][t]:
+                            if por_tomar <= 0: break
+                            disponible = row[col_sql]
+                            if disponible <= 0: continue
+                            
+                            tomamos = min(disponible, por_tomar)
+                            deducciones_db.append((tomamos, row['id'], col_sql, row['modelo'], c, t))
+                            piezas_tomadas_info.append(f"• Se apartaron {tomamos} pz. Talla {t} ({c}) del {row['modelo']}")
+                            
+                            row[col_sql] -= tomamos
+                            por_tomar -= tomamos
+                            
+                        # 🔥 ACTUALIZAMOS EL PEDIDO EN VIVO PARA QUE EL PDF RECORTE LA PRODUCCIÓN 🔥
+                        pedidos_app[c][t] = safe_int(pedidos_app[c].get(t, 0)) - cant_tomar
+                        
+            particiones.append((grupo, cuerpos, lienzos))
 
         est_por_folio_raw = [raw_estampados[i:i + estampados_por_folio] for i in range(0, len(raw_estampados), estampados_por_folio)]
         est_por_folio = []; estampados = []
