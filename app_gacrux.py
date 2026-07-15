@@ -997,12 +997,25 @@ def api_magia_madre():
         ]))
 
         data_t2 = [["N° ROLLO\n(Marcado)", "COLOR", "N° LIENZO"] + tallas_todas + ["TOTAL"]]
-        marcados = []; current_marcado = []; current_sum = 0
-        for d in datos_corte:
-            if current_sum + d["lienzos"] > 80 and current_sum > 0:
-                marcados.append(current_marcado); current_marcado = [d]; current_sum = d["lienzos"]
-            else: current_marcado.append(d); current_sum += d["lienzos"]
-        if current_marcado: marcados.append(current_marcado)
+        marcados = []
+        num_colores = len(datos_corte)
+
+        if num_colores > 0:
+            # Buscar en cuántos bloques podemos dividir para que ninguno pase de 91
+            for k in range(1, num_colores + 1):
+                test_marcados = [[] for _ in range(k)]
+                sumas = [0] * k
+                
+                # Repartición equitativa (ej. 3/3/3)
+                for i, d in enumerate(datos_corte):
+                    idx = i % k
+                    test_marcados[idx].append(d)
+                    sumas[idx] += d["lienzos"]
+                    
+                # Si ningún paquete se pasa del límite, guardamos y terminamos
+                if all(s <= 91 for s in sumas):
+                    marcados = [m for m in test_marcados if m]
+                    break
 
         suma_lienzos = 0; suma_tallas = {t: 0 for t in tallas_todas}; gran_total = 0; row_idx = 1
         estilos_tabla2 = [
@@ -1279,6 +1292,46 @@ def api_magia_pedido():
         pedidos_app = req.get('pedidos', {}) 
         folio_arranque = safe_int(req.get('folio_arranque', 1))
         fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
+        # ====================================================================
+        # 🔥 NUEVO: SISTEMA DE BÚSQUEDA Y CONSUMO DE LISOS EXISTENTES 🔥
+        # ====================================================================
+        piezas_tomadas_info = []
+        deducciones_db = []
+        
+        db_liso = conectar_bd()
+        cursor_liso = db_liso.cursor(dictionary=True)
+        mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
+        
+        for c, t_data in pedidos_app.items():
+            for t, cant in list(t_data.items()):
+                cant_necesaria = safe_int(cant)
+                if cant_necesaria > 0:
+                    col_sql = mapa_bd.get(t.upper())
+                    if not col_sql: continue
+                    
+                    # Buscar inventario LISO o LISA del modelo y color que tenga stock
+                    # El LIKE 'modelo %' asegura que busque en folios anteriores de ese modelo
+                    query = f"SELECT id, modelo, {col_sql} FROM panel_stock WHERE modelo LIKE %s AND estampado IN ('LISO', 'LISA') AND color=%s AND {col_sql} > 0 ORDER BY id ASC"
+                    cursor_liso.execute(query, (f"{modelo} %", c))
+                    disponibles = cursor_liso.fetchall()
+                    
+                    for row in disponibles:
+                        if cant_necesaria <= 0: break
+                        stock_actual = row[col_sql]
+                        tomar = min(stock_actual, cant_necesaria)
+                        
+                        deducciones_db.append((tomar, row['id'], col_sql, row['modelo'], c, t))
+                        piezas_tomadas_info.append(f"• Se apartaron {tomar} pz. Talla {t} ({c}) del {row['modelo']}")
+                        
+                        cant_necesaria -= tomar
+                        
+                    # Actualizamos el pedido restando lo que ya encontramos
+                    # Así la IA matemática solo calculará el corte para lo que realmente falta
+                    pedidos_app[c][t] = cant_necesaria 
+                    
+        cursor_liso.close()
+        db_liso.close()
+        # ====================================================================
 
         tallas_activas = set(); colores_activos = set()
         for c, t_data in pedidos_app.items():
@@ -1309,7 +1362,10 @@ def api_magia_pedido():
             return combos
 
         def calcular_desperdicio(grupo_tallas):
-            best_waste = float('inf'); best_lienzos_total = float('inf'); best_cuerpos = {}; best_lienzos_color = {}
+            best_waste = float('inf')
+            best_lienzos_total = float('inf')
+            best_cuerpos = {}
+            best_lienzos_color = {}
             
             combos = get_combos(len(grupo_tallas))
             if not combos: 
@@ -1317,38 +1373,70 @@ def api_magia_pedido():
             
             for combo in combos:
                 cuerpos = {grupo_tallas[i]: combo[i] for i in range(len(grupo_tallas))}
-                lienzos_color = {}; waste = 0; tot_l = 0
-                for c, peds in pedidos_app.items():
-                    req_lienzos = max((math.ceil(safe_int(peds.get(t, 0)) / cuerpos[t]) for t in grupo_tallas if safe_int(peds.get(t, 0)) > 0), default=0)
-                    lienzos_color[c] = req_lienzos; tot_l += req_lienzos
-                    for t in grupo_tallas: waste += (req_lienzos * cuerpos[t]) - safe_int(peds.get(t, 0))
+                lienzos_color = {}
+                waste = 0
+                tot_l = 0
+                es_invalido = False # Bandera para descartar combos que dejen faltantes no permitidos
                 
+                for c, peds in pedidos_app.items():
+                    min_l_needed = 0
+                    for t in grupo_tallas:
+                        ped = safe_int(peds.get(t, 0))
+                        if ped > 0:
+                            # 🔥 LA REGLA DE BALANCEO DE LOS JEFES 🔥
+                            if t not in ["CH", "M"]:
+                                # Permite un faltante exacto de 1 prenda
+                                l_req = math.ceil((ped - 1) / cuerpos[t])
+                            else:
+                                # CH y M se deben completar o sobrar, NUNCA faltar
+                                l_req = math.ceil(ped / cuerpos[t])
+                            
+                            if l_req > min_l_needed:
+                                min_l_needed = l_req
+                    
+                    lienzos_color[c] = min_l_needed
+                    tot_l += min_l_needed
+                    
+                    # Calcular el desperdicio real de este color
+                    for t in grupo_tallas:
+                        ped = safe_int(peds.get(t, 0))
+                        prod = min_l_needed * cuerpos[t]
+                        faltante = ped - prod
+                        
+                        if faltante > 0:
+                            if faltante == 1 and t not in ["CH", "M"]:
+                                pass # ✅ Balanceo exitoso, se permite y NO cuenta como desperdicio
+                            else:
+                                es_invalido = True # ❌ Faltante no permitido, descartar combo
+                        elif prod > ped:
+                            waste += (prod - ped) # Sobrante real
+        
+                if es_invalido:
+                    continue # Saltamos este combo porque no cumple las reglas de producción
+        
+                # Priorizamos: Menor cantidad de lienzos (para usar más cuerpos) y luego menor desperdicio
                 if tot_l < best_lienzos_total or (tot_l == best_lienzos_total and waste < best_waste):
-                    best_lienzos_total = tot_l; best_waste = waste; best_cuerpos = cuerpos; best_lienzos_color = lienzos_color
+                    best_lienzos_total = tot_l
+                    best_waste = waste
+                    best_cuerpos = cuerpos
+                    best_lienzos_color = lienzos_color
+                    
             return best_waste, best_lienzos_total, best_cuerpos, best_lienzos_color
 
         # 🔥 LA NUEVA IA: DECIDE CÓMO PARTIR LAS TALLAS EN HOJAS DE CORTE 🔥
         def particionar_tallas(grupo):
+            if not grupo: return []
             n = len(grupo)
-            if n <= 3:
-                # 1 a 3 tallas: Obliga a buscar la mejor combinación en 1 sola hoja.
-                w, tl, c, l = calcular_desperdicio(grupo)
+            w, tl, c, l = calcular_desperdicio(grupo)
+            tot_ped = total_pedido_grupo(grupo)
+            
+            # Si logramos <= 8% de sobrantes, o si ya solo queda 1 talla (no se puede dividir más)
+            if n == 1 or (tot_ped > 0 and w <= (tot_ped * 0.08)):
                 return [(grupo, c, l)]
-            elif n == 4:
-                # 4 tallas: Intenta en 1 hoja. Si el desperdicio supera el 50%, parte en 2 y 2.
-                w1, tl1, c1, l1 = calcular_desperdicio(grupo)
-                tot_ped = total_pedido_grupo(grupo)
-                if tot_ped > 0 and w1 <= (tot_ped * 0.50):
-                    return [(grupo, c1, l1)]
-                else:
-                    return particionar_tallas(grupo[:2]) + particionar_tallas(grupo[2:])
-            elif n == 5:
-                # 5 tallas: Siempre fuerza la división en 3 y 2.
-                return particionar_tallas(grupo[:3]) + particionar_tallas(grupo[3:])
-            else:
-                # 6+ tallas: Parte a la mitad (ej. 3 y 3)
-                mid = n // 2
-                return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
+                
+            # Si rompe la regla del 8%, lo partimos a la mitad obligatoriamente
+            mid = n // 2
+            return particionar_tallas(grupo[:mid]) + particionar_tallas(grupo[mid:])
 
         particiones = particionar_tallas(tallas_activas)
 
@@ -1386,11 +1474,17 @@ def api_magia_pedido():
                             sob_est = max(0, prod_est - ped_est)
                             
                             # SOLAMENTE LOS SOBRANTES SE VAN A LA NUBE:
+                            # SOLAMENTE LOS SOBRANTES SE VAN A LA NUBE COMO COMODINES:
                             if sob_est > 0:
                                 modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" 
                                 col_sql = mapa_bd.get(t, "talla_ex_g")
-                                cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, est, c))
+                                
+                                # 🔥 REGLA DE INVENTARIO: LOS SOBRANTES SE CONVIERTEN EN "LISO" 🔥
+                                estampado_comodin = "LISO"
+                                
+                                cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, estampado_comodin, c))
                                 res = cursor.fetchone()
+                                
                                 v_stock = {"talla_t12":0, "talla_t16":0, "talla_ex_ch":0, "talla_ch":0, "talla_m":0, "talla_g":0, "talla_ex_g":0}
                                 v_stock[col_sql] = sob_est
                                 
@@ -1400,20 +1494,26 @@ def api_magia_pedido():
                                     panel_id = res['id']
                                 else:
                                     cursor.execute("""INSERT INTO panel_stock (modelo, estampado, color, talla_t12, talla_t16, talla_ex_ch, talla_ch, talla_m, talla_g, talla_ex_g, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'TODO', 'NORMAL', 'SUDADERA')""", 
-                                                   (modelo_folio_nube, est, c, v_stock["talla_t12"], v_stock["talla_t16"], v_stock["talla_ex_ch"], v_stock["talla_ch"], v_stock["talla_m"], v_stock["talla_g"], v_stock["talla_ex_g"]))
+                                                   (modelo_folio_nube, estampado_comodin, c, v_stock["talla_t12"], v_stock["talla_t16"], v_stock["talla_ex_ch"], v_stock["talla_ch"], v_stock["talla_m"], v_stock["talla_g"], v_stock["talla_ex_g"]))
                                     panel_id = cursor.lastrowid
-
-                                cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, est, c, t))
+                            
+                                cursor.execute("SELECT codigo_barras FROM inventario WHERE modelo=%s AND estampado=%s AND color=%s AND talla=%s LIMIT 1", (modelo_folio_nube, estampado_comodin, c, t))
                                 if not cursor.fetchone():
-                                    cod = generar_codigo_13_nube(cursor, modelo_folio_nube, est, c, t)
+                                    cod = generar_codigo_13_nube(cursor, modelo_folio_nube, estampado_comodin, c, t)
                                     cursor.execute("INSERT INTO inventario (codigo_barras, modelo, estampado, color, talla, precio, panel_stock_id, genero, estilo, tipo_prenda) VALUES (%s, %s, %s, %s, %s, 250.0, %s, 'TODO', 'NORMAL', 'SUDADERA')", 
-                                                   (cod, modelo_folio_nube, est, c, t, panel_id))
+                                                   (cod, modelo_folio_nube, estampado_comodin, c, t, panel_id))
                                 total_ingresado_nube += sob_est
 
                 if total_ingresado_nube > 0:
                     cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
                                    (modelo, total_ingresado_nube, fecha_txt))
-                                   
+                # 🔥 NUEVO: APLICAR DESCUENTOS DE LISOS A LA NUBE 🔥
+                for tomar, p_id, col_sql, mod_name, c, t in deducciones_db:
+                    cursor.execute(f"UPDATE panel_stock SET {col_sql} = {col_sql} - %s WHERE id = %s", (tomar, p_id))
+                    fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'LISO/LISA', %s, %s, %s, 0, 0, %s, 'USO LISO PARA PEDIDO', 'SISTEMA')", 
+                                   (mod_name, c, t, tomar, fecha_actual))
+                                          
                 cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
                 db.commit()
             except Exception as e:
@@ -1636,8 +1736,8 @@ def api_magia_pedido():
                         t_sob = Table(data_sob, colWidths=anchos_columnas, hAlign='CENTER'); t_sob.setStyle(style_tabla_3)
 
                         wrap_tot = Table([[Paragraph("<font color='#3b82f6'>1. TOTAL PRODUCIDO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_tot]], hAlign='CENTER')
-                        wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO CLIENTE</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]], hAlign='CENTER')
-                        wrap_sob = Table([[Paragraph("<font color='#e63946'>3. A NUBE (SOBRANTE)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]], hAlign='CENTER')
+                        wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO: MANDAR A ESTAMPAR</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]], hAlign='CENTER')
+                        wrap_sob = Table([[Paragraph("<font color='#e63946'>3. SOBRANTES: LISO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]], hAlign='CENTER')
 
                         tablas_estampados.append(Table(
                             [[wrap_tot, "", wrap_ped], 
@@ -1657,7 +1757,16 @@ def api_magia_pedido():
                         elementos_hoja.append(Spacer(1, 8))
                         elementos_hoja.append(tabla_est)
                         elementos_hoja.append(Spacer(1, 15))
-
+# 🔥 NUEVO: IMPRIMIR LAS PIEZAS LISAS QUE DEBEN APARTARSE 🔥
+                    if piezas_tomadas_info:
+                        estilo_texto_liso = ParagraphStyle(name='TextoLiso', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor("#d97706"))
+                        elementos_hoja.append(Paragraph("📦 PIEZAS LISAS TOMADAS DEL INVENTARIO (FAVOR DE APARTARLAS):", estilo_texto_liso))
+                        elementos_hoja.append(Spacer(1, 5))
+                        for info_txt in piezas_tomadas_info:
+                            elementos_hoja.append(Paragraph(info_txt, ParagraphStyle(name='LiLiso', fontName='Helvetica', fontSize=8, leading=9)))
+                        elementos_hoja.append(Spacer(1, 10))
+                        
+                    # (Continúa con las firmas)
                     firmas_data = [
                         [" ", "", " "], [" ", "", " "], [" ", "", " "],
                         ["___________________________________", "", "___________________________________"],
