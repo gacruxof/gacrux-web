@@ -1309,10 +1309,12 @@ def api_magia_pedido():
                     col_sql = mapa_bd.get(t.upper())
                     if not col_sql: continue
                     
-                    # Buscar inventario LISO o LISA del modelo y color que tenga stock
-                    # El LIKE 'modelo %' asegura que busque en folios anteriores de ese modelo
-                    query = f"SELECT id, modelo, {col_sql} FROM panel_stock WHERE modelo LIKE %s AND estampado IN ('LISO', 'LISA') AND color=%s AND {col_sql} > 0 ORDER BY id ASC"
-                    cursor_liso.execute(query, (f"{modelo} %", c))
+                    # Definimos el nombre exacto del folio actual para excluirlo de la búsqueda
+                    modelo_actual = f"{modelo} {str(folio_arranque).zfill(2)}"
+                    
+                    # Buscar inventario LISO excluyendo el folio que se está creando en este momento (!=)
+                    query = f"SELECT id, modelo, {col_sql} FROM panel_stock WHERE modelo LIKE %s AND modelo != %s AND estampado IN ('LISO', 'LISA') AND color=%s AND {col_sql} > 0 ORDER BY id ASC"
+                    cursor_liso.execute(query, (f"{modelo} %", modelo_actual, c))
                     disponibles = cursor_liso.fetchall()
                     
                     for row in disponibles:
