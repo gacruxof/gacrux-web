@@ -1294,13 +1294,15 @@ def api_magia_pedido():
         fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
 
         # 🔥 1. BLINDAJE CONTRA EL PEDIDO FANTASMA (TIMEOUT RETRY) 🔥
-        cursor_blindaje = db.cursor(dictionary=True)
+        db_blindaje = conectar_bd() # ABRIMOS UNA NUEVA CONEXIÓN
+        cursor_blindaje = db_blindaje.cursor(dictionary=True)
         cursor_blindaje.execute("SELECT folio FROM recetas_madre WHERE modelo = %s", (modelo,))
         row_folio = cursor_blindaje.fetchone()
         cursor_blindaje.close()
+        db_blindaje.close() # CERRAMOS LA CONEXIÓN LIMPIAMENTE
+
         if row_folio and safe_int(row_folio.get('folio', 1)) > folio_arranque:
             return jsonify({'error': f'⛔ DOBLE EJECUCIÓN DETECTADA: Tu dispositivo mandó el pedido 2 veces seguidas por lentitud de red. El inventario ya se descontó correctamente en el primer intento. Recarga la página.'}), 400
-
         # 🔥 NUEVO: Guardamos el pedido original INTACTO para el PDF 🔥
         pedidos_originales = {c: {t: safe_int(cant) for t, cant in t_data.items()} for c, t_data in pedidos_app.items()}
 
