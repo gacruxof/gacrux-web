@@ -1740,29 +1740,25 @@ def api_magia_pedido():
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                         
-                        data_tot = [["COLOR", "", ""] + tallas_activas]; sum_prod = {t: 0 for t in tallas_activas}; sum_tomado = {t: 0 for t in tallas_activas}
+                        data_tot = [["COLOR", "", ""] + tallas_activas]; sum_prod = {t: 0 for t in tallas_activas}
                         data_ped = [["COLOR", "", ""] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
                         data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
+                        data_alm = [["COLOR", "", ""] + tallas_activas]; sum_alm = {t: 0 for t in tallas_activas}; tiene_almacen = False
 
                         for c in color_chunk:
                             r_tot = [Paragraph(c, style_color_inv_dyn), "", ""]
                             r_ped = [Paragraph(c, style_color_inv_dyn), "", ""]
                             r_sob = [Paragraph(c, style_color_inv_dyn), "", ""]
+                            r_alm = []
+                            tomado_alguno_c = False
                             
                             for t in tallas_activas:
-                                # 1. TOTAL PRODUCIDO Y TOMADO (Ej. 3/2)
+                                # 1. TOTAL PRODUCIDO (LIMPIO, SIN FORMATO 3/4)
                                 prod = total_prod[c][t]
                                 base_prod = prod // num_est; sobra_prod = prod % num_est
                                 prod_est = base_prod + 1 if original_idx < sobra_prod else base_prod
-                                
-                                tomado_total = lisos_tomados_globales[c][t]
-                                base_tomado = tomado_total // num_est; sobra_tomado = tomado_total % num_est
-                                tomado_est = base_tomado + 1 if original_idx < sobra_tomado else base_tomado
-                                
-                                sum_prod[t] += prod_est; sum_tomado[t] += tomado_est
-                                
-                                if tomado_est > 0: r_tot.append(f"{prod_est}/{tomado_est}")
-                                else: r_tot.append(str(prod_est) if prod_est > 0 else "-")
+                                sum_prod[t] += prod_est
+                                r_tot.append(str(prod_est) if prod_est > 0 else "-")
                                 
                                 # 2. PEDIDO ORIGINAL COMPLETO
                                 ped = safe_int(pedidos_originales.get(c, {}).get(t, 0))
@@ -1771,16 +1767,39 @@ def api_magia_pedido():
                                 sum_ped[t] += ped_est
                                 r_ped.append(str(ped_est) if ped_est > 0 else "-")
                                 
-                                # 3. SOBRANTES (Se calcula usando pedidos_app que ya está reducido)
+                                # 3. SOBRANTES
                                 ped_reducido = safe_int(pedidos_app.get(c, {}).get(t, 0))
                                 base_ped_r = ped_reducido // num_est; sobra_ped_r = ped_reducido % num_est
                                 ped_est_reducido = base_ped_r + 1 if original_idx < sobra_ped_r else base_ped_r
-                                
                                 sob_est = max(0, prod_est - ped_est_reducido)
                                 sum_sob[t] += sob_est
                                 r_sob.append(str(sob_est) if sob_est > 0 else "-")
+                                
+                                # 4. TOMADO DE ALMACÉN (NUEVA LÓGICA)
+                                tomado_total = lisos_tomados_globales[c][t]
+                                base_tomado = tomado_total // num_est; sobra_tomado = tomado_total % num_est
+                                tomado_est = base_tomado + 1 if original_idx < sobra_tomado else base_tomado
+                                sum_alm[t] += tomado_est
+                                if tomado_est > 0: tomado_alguno_c = True
+                                r_alm.append(str(tomado_est) if tomado_est > 0 else "-")
 
                             data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
+                            
+                            # Si este color tomó prendas de almacén, lo agregamos a la Tabla 4 con su origen
+                            if tomado_alguno_c:
+                                tiene_almacen = True
+                                modelos_origen = list(set([mod for tomar, p_id, col_sql, mod, col, tal in deducciones_db if col == c]))
+                                str_origen = ", ".join(modelos_origen)
+                                font_alm = max(5, f_size - 1)
+                                p_alm = Paragraph(f"{c}<br/><font fontSize={font_alm} color='#d97706'>De: {str_origen}</font>", style_color_inv_dyn)
+                                data_alm.append([p_alm, "", ""] + r_alm)
+                        
+                        # Filas de Suma Inferior
+                        data_tot.append(["SUMA", "", ""] + [str(sum_prod[t]) for t in tallas_activas])
+                        data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
+                        data_sob.append(["SUMA", "", ""] + [str(sum_sob[t]) for t in tallas_activas])
+                        if tiene_almacen:
+                            data_alm.append(["SUMA", "", ""] + [str(sum_alm[t]) for t in tallas_activas])
                         
                         # Filas de Suma Inferior
                         f_tot = ["SUMA", "", ""]
@@ -1808,10 +1827,18 @@ def api_magia_pedido():
                         wrap_ped = Table([[Paragraph("<font color='#16a34a'>2. PEDIDO: MANDAR A ESTAMPAR</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_ped]], hAlign='CENTER')
                         wrap_sob = Table([[Paragraph("<font color='#e63946'>3. SOBRANTES: LISO</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_sob]], hAlign='CENTER')
 
+                        # 🔥 SE GENERA EL WRAP DEL ALMACÉN SOLO SI SE TOMÓ ALGO 🔥
+                        if tiene_almacen:
+                            t_alm = Table(data_alm, colWidths=anchos_columnas, hAlign='CENTER'); t_alm.setStyle(style_tabla_3)
+                            wrap_alm = Table([[Paragraph("<font color='#d97706'>4. TOMADO DE ALMACÉN (NO ESTAMPAR)</font>", ParagraphStyle('t', fontSize=8, fontName='Helvetica-Bold'))], [Spacer(1,4)], [t_alm]], hAlign='CENTER')
+                        else:
+                            wrap_alm = ""
+
+                        # Llenamos el hueco con wrap_alm (si no hay, queda en blanco limpiamente)
                         tablas_estampados.append(Table(
                             [[wrap_tot, "", wrap_ped], 
                              [Spacer(1, 15), "", Spacer(1, 15)], 
-                             [wrap_sob, "", ""]], 
+                             [wrap_sob, "", wrap_alm]], 
                             colWidths=[286, 10, 286], 
                             style=[('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)], 
                             hAlign='CENTER'
@@ -1826,16 +1853,7 @@ def api_magia_pedido():
                         elementos_hoja.append(Spacer(1, 8))
                         elementos_hoja.append(tabla_est)
                         elementos_hoja.append(Spacer(1, 15))
-# 🔥 NUEVO: IMPRIMIR LAS PIEZAS LISAS QUE DEBEN APARTARSE 🔥
-                    if piezas_tomadas_info:
-                        estilo_texto_liso = ParagraphStyle(name='TextoLiso', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor("#d97706"))
-                        elementos_hoja.append(Paragraph("📦 PIEZAS LISAS TOMADAS DEL INVENTARIO (FAVOR DE APARTARLAS):", estilo_texto_liso))
-                        elementos_hoja.append(Spacer(1, 5))
-                        for info_txt in piezas_tomadas_info:
-                            elementos_hoja.append(Paragraph(info_txt, ParagraphStyle(name='LiLiso', fontName='Helvetica', fontSize=8, leading=9)))
-                        elementos_hoja.append(Spacer(1, 10))
                         
-                    # (Continúa con las firmas)
                     firmas_data = [
                         [" ", "", " "], [" ", "", " "], [" ", "", " "],
                         ["___________________________________", "", "___________________________________"],
