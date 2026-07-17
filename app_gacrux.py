@@ -1293,11 +1293,22 @@ def api_magia_pedido():
         folio_arranque = safe_int(req.get('folio_arranque', 1))
         fecha_txt = datetime.datetime.now().strftime("%d/%m/%y")
 
-        tallas_activas = set(); colores_activos = set()
+        # 🔥 NUEVO: Guardamos el pedido original INTACTO para el PDF 🔥
+        pedidos_originales = {c: {t: safe_int(cant) for t, cant in t_data.items()} for c, t_data in pedidos_app.items()}
+
+        # 🔥 NUEVO: Respetamos el orden exacto en el que entraron los colores 🔥
+        colores_activos = []
+        tallas_activas_set = set()
         for c, t_data in pedidos_app.items():
+            tiene_pedido = False
             for t, cant in t_data.items():
-                if safe_int(cant) > 0: tallas_activas.add(t); colores_activos.add(c)
-        tallas_activas = list(tallas_activas); colores_activos = list(colores_activos)
+                if safe_int(cant) > 0:
+                    tallas_activas_set.add(t)
+                    tiene_pedido = True
+            if tiene_pedido and c not in colores_activos:
+                colores_activos.append(c)
+                
+        tallas_activas = list(tallas_activas_set)
         orden_tallas = {"T-12":1, "T-16":2, "EX CH":3, "CH":4, "M":5, "G":6, "EX G":7}
         tallas_activas.sort(key=lambda x: orden_tallas.get(x, 99))
 
@@ -1315,21 +1326,19 @@ def api_magia_pedido():
             return combos
 
         # ====================================================================
-        # 🔥 FASE 1: MAPEAR INVENTARIO DE COMODINES (SIN DESCONTAR AÚN) 🔥
+        # 🔥 FASE 1: MAPEAR INVENTARIO DE COMODINES (SIN DESCUENTOS RAROS) 🔥
         # ====================================================================
-        lisos_disp = {c: {t: [] for t in tallas_activas} for c in colores_activos}
+        lisos_disp = {c: [] for c in colores_activos}
         db_liso = conectar_bd()
         cursor_liso = db_liso.cursor(dictionary=True)
         mapa_bd = {"CH": "talla_ch", "M": "talla_m", "G": "talla_g", "EX CH": "talla_ex_ch", "XG": "talla_ex_g", "EX G": "talla_ex_g", "T-12": "talla_t12", "T-16": "talla_t16"}
         
+        modelo_actual = f"{modelo} {str(folio_arranque).zfill(2)}"
         for c in colores_activos:
-            for t in tallas_activas:
-                col_sql = mapa_bd.get(t.upper())
-                if not col_sql: continue
-                modelo_actual = f"{modelo} {str(folio_arranque).zfill(2)}"
-                query = f"SELECT id, modelo, {col_sql} FROM panel_stock WHERE modelo LIKE %s AND modelo != %s AND estampado IN ('LISO', 'LISA') AND color=%s AND {col_sql} > 0 ORDER BY id ASC"
-                cursor_liso.execute(query, (f"{modelo} %", modelo_actual, c))
-                lisos_disp[c][t] = cursor_liso.fetchall()
+            # Trae la fila entera de la BD una sola vez por color
+            query = f"SELECT id, modelo, talla_t12, talla_t16, talla_ex_ch, talla_ch, talla_m, talla_g, talla_ex_g FROM panel_stock WHERE modelo LIKE %s AND modelo != %s AND estampado IN ('LISO', 'LISA') AND color=%s AND (talla_t12>0 OR talla_t16>0 OR talla_ex_ch>0 OR talla_ch>0 OR talla_m>0 OR talla_g>0 OR talla_ex_g>0) ORDER BY id ASC"
+            cursor_liso.execute(query, (f"{modelo} %", modelo_actual, c))
+            lisos_disp[c] = cursor_liso.fetchall()
         cursor_liso.close(); db_liso.close()
 
         # ====================================================================
@@ -1372,7 +1381,7 @@ def api_magia_pedido():
                             
                             tomados = 0
                             if diff > 0:
-                                max_disp = sum(row[mapa_bd[t.upper()]] for row in lisos_disp[c][t])
+                                max_disp = sum(row.get(mapa_bd[t.upper()], 0) for row in lisos_disp[c])
                                 tomados = min(diff, max_disp) 
                                 faltante_real = diff - tomados
                                 
@@ -1434,11 +1443,12 @@ def api_magia_pedido():
         particiones_inteligentes = particionar_tallas(tallas_activas)
 
         # ====================================================================
-        # 🔥 FASE 3: EJECUTAR EL PLAN MAESTRO Y DESCONTAR LISOS 🔥
+        # 🔥 FASE 3: EJECUTAR EL PLAN MAESTRO Y DESCONTAR LISOS EXACTOS 🔥
         # ====================================================================
         piezas_tomadas_info = []
         deducciones_db = []
-        particiones = [] # Limpiamos para el PDF
+        particiones = [] 
+        lisos_tomados_globales = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
         
         for grupo, cuerpos, lienzos, lisos_tomar in particiones_inteligentes:
             for c in colores_activos:
@@ -1447,9 +1457,9 @@ def api_magia_pedido():
                     if cant_tomar > 0:
                         col_sql = mapa_bd[t.upper()]
                         por_tomar = cant_tomar
-                        for row in lisos_disp[c][t]:
+                        for row in lisos_disp[c]:
                             if por_tomar <= 0: break
-                            disponible = row[col_sql]
+                            disponible = row.get(col_sql, 0)
                             if disponible <= 0: continue
                             
                             tomamos = min(disponible, por_tomar)
@@ -1458,8 +1468,9 @@ def api_magia_pedido():
                             
                             row[col_sql] -= tomamos
                             por_tomar -= tomamos
+                            lisos_tomados_globales[c][t] += tomamos
                             
-                        # 🔥 ACTUALIZAMOS EL PEDIDO EN VIVO PARA QUE EL PDF RECORTE LA PRODUCCIÓN 🔥
+                        # Actualizamos el pedido en vivo para que los sobrantes sean correctos
                         pedidos_app[c][t] = safe_int(pedidos_app[c].get(t, 0)) - cant_tomar
                         
             particiones.append((grupo, cuerpos, lienzos))
@@ -1714,7 +1725,7 @@ def api_magia_pedido():
                         w_vacio = max(10, (espacio_total_tabla - w_color - (w_talla * len(tallas_activas))) / 2.0) 
                         anchos_columnas = [w_color, w_vacio, w_vacio] + [w_talla] * len(tallas_activas)
                         
-                        data_tot = [["COLOR", "", ""] + tallas_activas]; sum_tot = {t: 0 for t in tallas_activas}
+                        data_tot = [["COLOR", "", ""] + tallas_activas]; sum_prod = {t: 0 for t in tallas_activas}; sum_tomado = {t: 0 for t in tallas_activas}
                         data_ped = [["COLOR", "", ""] + tallas_activas]; sum_ped = {t: 0 for t in tallas_activas}
                         data_sob = [["COLOR", "", ""] + tallas_activas]; sum_sob = {t: 0 for t in tallas_activas}
 
@@ -1724,26 +1735,45 @@ def api_magia_pedido():
                             r_sob = [Paragraph(c, style_color_inv_dyn), "", ""]
                             
                             for t in tallas_activas:
+                                # 1. TOTAL PRODUCIDO Y TOMADO (Ej. 3/2)
                                 prod = total_prod[c][t]
-                                ped = safe_int(pedidos_app.get(c, {}).get(t, 0))
-                                
                                 base_prod = prod // num_est; sobra_prod = prod % num_est
                                 prod_est = base_prod + 1 if original_idx < sobra_prod else base_prod
                                 
+                                tomado_total = lisos_tomados_globales[c][t]
+                                base_tomado = tomado_total // num_est; sobra_tomado = tomado_total % num_est
+                                tomado_est = base_tomado + 1 if original_idx < sobra_tomado else base_tomado
+                                
+                                sum_prod[t] += prod_est; sum_tomado[t] += tomado_est
+                                
+                                if tomado_est > 0: r_tot.append(f"{prod_est}/{tomado_est}")
+                                else: r_tot.append(str(prod_est) if prod_est > 0 else "-")
+                                
+                                # 2. PEDIDO ORIGINAL COMPLETO
+                                ped = safe_int(pedidos_originales.get(c, {}).get(t, 0))
                                 base_ped = ped // num_est; sobra_ped = ped % num_est
                                 ped_est = base_ped + 1 if original_idx < sobra_ped else base_ped
+                                sum_ped[t] += ped_est
+                                r_ped.append(str(ped_est) if ped_est > 0 else "-")
                                 
-                                sob_est = max(0, prod_est - ped_est)
+                                # 3. SOBRANTES (Se calcula usando pedidos_app que ya está reducido)
+                                ped_reducido = safe_int(pedidos_app.get(c, {}).get(t, 0))
+                                base_ped_r = ped_reducido // num_est; sobra_ped_r = ped_reducido % num_est
+                                ped_est_reducido = base_ped_r + 1 if original_idx < sobra_ped_r else base_ped_r
                                 
-                                r_tot.append(str(prod_est) if prod_est>0 else "-")
-                                r_ped.append(str(ped_est) if ped_est>0 else "-")
-                                r_sob.append(str(sob_est) if sob_est>0 else "-")
-                                
-                                sum_tot[t] += prod_est; sum_ped[t] += ped_est; sum_sob[t] += sob_est
+                                sob_est = max(0, prod_est - ped_est_reducido)
+                                sum_sob[t] += sob_est
+                                r_sob.append(str(sob_est) if sob_est > 0 else "-")
 
                             data_tot.append(r_tot); data_ped.append(r_ped); data_sob.append(r_sob)
                         
-                        data_tot.append(["SUMA", "", ""] + [str(sum_tot[t]) for t in tallas_activas])
+                        # Filas de Suma Inferior
+                        f_tot = ["SUMA", "", ""]
+                        for t in tallas_activas:
+                            if sum_tomado[t] > 0: f_tot.append(f"{sum_prod[t]}/{sum_tomado[t]}")
+                            else: f_tot.append(str(sum_prod[t]) if sum_prod[t] > 0 else "-")
+                        data_tot.append(f_tot)
+                        
                         data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
                         data_sob.append(["SUMA", "", ""] + [str(sum_sob[t]) for t in tallas_activas])
 
