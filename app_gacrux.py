@@ -1335,9 +1335,10 @@ def api_magia_pedido():
         
         modelo_actual = f"{modelo} {str(folio_arranque).zfill(2)}"
         for c in colores_activos:
-            # Trae la fila entera de la BD una sola vez por color
-            query = f"SELECT id, modelo, talla_t12, talla_t16, talla_ex_ch, talla_ch, talla_m, talla_g, talla_ex_g FROM panel_stock WHERE modelo LIKE %s AND modelo != %s AND estampado IN ('LISO', 'LISA') AND color=%s AND (talla_t12>0 OR talla_t16>0 OR talla_ex_ch>0 OR talla_ch>0 OR talla_m>0 OR talla_g>0 OR talla_ex_g>0) ORDER BY id ASC"
-            cursor_liso.execute(query, (f"{modelo} %", modelo_actual, c))
+            # 🔥 CORRECCIÓN: REGEXP OBLIGA A BUSCAR SOLO EL MODELO EXACTO + ESPACIO + DÍGITOS 🔥
+            # Evita que "ARIANA" se robe prendas de "ARIANA CUELLO REDONDO"
+            query = f"SELECT id, modelo, talla_t12, talla_t16, talla_ex_ch, talla_ch, talla_m, talla_g, talla_ex_g FROM panel_stock WHERE modelo REGEXP %s AND modelo != %s AND estampado IN ('LISO', 'LISA') AND color=%s AND (talla_t12>0 OR talla_t16>0 OR talla_ex_ch>0 OR talla_ch>0 OR talla_m>0 OR talla_g>0 OR talla_ex_g>0) ORDER BY id ASC"
+            cursor_liso.execute(query, (f"^{modelo} [0-9]+$", modelo_actual, c))
             lisos_disp[c] = cursor_liso.fetchall()
         cursor_liso.close(); db_liso.close()
 
