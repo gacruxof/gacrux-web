@@ -1500,6 +1500,12 @@ def api_magia_pedido():
         if step in ['db', 'all']:
             db = conectar_bd(); cursor = db.cursor(dictionary=True)
             try:
+                # 🔥 CANDADO ANTI-FANTASMA: Bloquea el modelo para que ningún otro pedido lo toque hasta que este termine
+                cursor.execute("SELECT folio FROM recetas_madre WHERE modelo = %s FOR UPDATE", (modelo,))
+                row_folio = cursor.fetchone()
+                if row_folio and safe_int(row_folio.get('folio', 1)) > folio_arranque:
+                    raise Exception('⛔ DOBLE EJECUCIÓN DETECTADA: Tu dispositivo mandó el pedido 2 veces seguidas. Recarga la página.')
+
                 total_prod = {c: {t: 0 for t in tallas_activas} for c in colores_activos}
                 for particion in particiones:
                     grupo_tallas, cuerpos_dict, lienzos = particion
@@ -1519,13 +1525,9 @@ def api_magia_pedido():
                             ped_est = base_ped + 1 if i_e < sobra_ped else base_ped
                             sob_est = max(0, prod_est - ped_est)
                             
-                            # SOLAMENTE LOS SOBRANTES SE VAN A LA NUBE:
-                            # SOLAMENTE LOS SOBRANTES SE VAN A LA NUBE COMO COMODINES:
                             if sob_est > 0:
                                 modelo_folio_nube = f"{modelo} {str(folio_arranque).zfill(2)}" 
                                 col_sql = mapa_bd.get(t, "talla_ex_g")
-                                
-                                # 🔥 REGLA DE INVENTARIO: LOS SOBRANTES SE CONVIERTEN EN "LISO" 🔥
                                 estampado_comodin = "LISO"
                                 
                                 cursor.execute("SELECT id FROM panel_stock WHERE modelo=%s AND estampado=%s AND color=%s", (modelo_folio_nube, estampado_comodin, c))
@@ -1553,21 +1555,23 @@ def api_magia_pedido():
                 if total_ingresado_nube > 0:
                     cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'MULTIPLES', 'MULTIPLE', 'MULTIPLE', %s, 0, 0, %s, 'INGRESO APP LOTE (SOBRANTES)', 'SISTEMA')", 
                                    (modelo, total_ingresado_nube, fecha_txt))
-                # 🔥 NUEVO: APLICAR DESCUENTOS DE LISOS A LA NUBE 🔥
                 for tomar, p_id, col_sql, mod_name, c, t in deducciones_db:
                     cursor.execute(f"UPDATE panel_stock SET {col_sql} = {col_sql} - %s WHERE id = %s", (tomar, p_id))
+                    cursor.execute(f"DELETE FROM inventario WHERE panel_stock_id = %s AND talla = %s AND color = %s AND estampado IN ('LISO', 'LISA') LIMIT {int(tomar)}", (p_id, t, c))
                     fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     cursor.execute("INSERT INTO historial_ventas (modelo, estampado, color, talla, cantidad, precio_unitario, total_pagado, fecha_hora, tipo_movimiento, realizado_por) VALUES (%s, 'LISO/LISA', %s, %s, %s, 0, 0, %s, 'USO LISO PARA PEDIDO', 'SISTEMA')", 
                                    (mod_name, c, t, tomar, fecha_actual))
                                           
                 cursor.execute("UPDATE recetas_madre SET folio = %s WHERE modelo = %s", (folio_arranque + 1, modelo))
-                db.commit()
+                
+                # 🔥 QUITAMOS EL db.commit() AQUÍ PARA ESPERAR AL PDF 🔥
             except Exception as e:
                 db.rollback(); raise e
-            finally:
-                cursor.close(); db.close()
+            # 🔥 QUITAMOS EL db.close() AQUÍ PARA MANTENER LA BASE DE DATOS ABIERTA 🔥
 
-            if step == 'db': return jsonify({'status': 'ok'})
+            if step == 'db': 
+                db.commit(); cursor.close(); db.close()
+                return jsonify({'status': 'ok'})
 
         # 🔥 PASO 2: DIBUJAR PDF 🔥
         if step in ['pdf', 'all']:
@@ -1870,8 +1874,8 @@ def api_magia_pedido():
             style_bc_text = ParagraphStyle(name='bc', alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=8, leading=10)
             style_bc_title = ParagraphStyle(name='bct', alignment=TA_LEFT, fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"))
 
-            db_bc = conectar_bd()
-            cursor_bc = db_bc.cursor(dictionary=True)
+            # 🔥 REUTILIZAMOS LA CONEXIÓN MAESTRA QUE AÚN TIENE LOS DATOS EN PAUSA 🔥
+            cursor_bc = db.cursor(dictionary=True)
             
             try:
                 for f_val in [folio_arranque]:
@@ -1932,7 +1936,7 @@ def api_magia_pedido():
                 print("Error Códigos Pedido:", e)
             finally:
                 cursor_bc.close()
-                db_bc.close()
+                # db.close() NO SE CIERRA AÚN
                 
             if not elementos_codigos:
                 elementos_codigos.append(Paragraph("Sin códigos.", estilos['Normal']))
@@ -1940,6 +1944,13 @@ def api_magia_pedido():
             doc_codigos.build(elementos_codigos)
             pdf_codigos_base64 = base64.b64encode(buffer_codigos.getvalue()).decode('utf-8')
             buffer_codigos.close()
+
+            # 🔥 SI EL CÓDIGO LLEGÓ HASTA AQUÍ, LOS PDFs SE CREARON PERFECTOS 🔥
+            # 🔥 AHORA SÍ, GUARDAMOS LOS DESCUENTOS PARA SIEMPRE 🔥
+            if step in ['all']:
+                db.commit()
+                cursor.close()
+                db.close()
 
             return jsonify({
                 'status': 'ok', 
@@ -1951,9 +1962,16 @@ def api_magia_pedido():
             })
 
     except Exception as e:
+        # 🔥 SI ALGO FALLÓ (MEMORIA, PDF, ETC), DESHACEMOS TODOS LOS CAMBIOS DE LA BD 🔥
+        try:
+            if 'db' in locals(): 
+                db.rollback() 
+                db.close()
+        except: pass
+
         error_exacto = traceback.format_exc()
         print("ERROR CRÍTICO PEDIDO:", error_exacto)
-        return jsonify({'error': f"💥 Falla Interna (Posible falta de Memoria en Render):\n{error_exacto}"}), 500
+        return jsonify({'error': f"💥 Falla Interna (Se bloqueó el descuento. Todo está seguro):\n{error_exacto}"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
