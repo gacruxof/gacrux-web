@@ -1802,14 +1802,11 @@ def api_magia_pedido():
                             data_alm.append(["SUMA", "", ""] + [str(sum_alm[t]) for t in tallas_activas])
                         
                         # Filas de Suma Inferior
-                        f_tot = ["SUMA", "", ""]
-                        for t in tallas_activas:
-                            if sum_tomado[t] > 0: f_tot.append(f"{sum_prod[t]}/{sum_tomado[t]}")
-                            else: f_tot.append(str(sum_prod[t]) if sum_prod[t] > 0 else "-")
-                        data_tot.append(f_tot)
-                        
+                        data_tot.append(["SUMA", "", ""] + [str(sum_prod[t]) for t in tallas_activas])
                         data_ped.append(["SUMA", "", ""] + [str(sum_ped[t]) for t in tallas_activas])
                         data_sob.append(["SUMA", "", ""] + [str(sum_sob[t]) for t in tallas_activas])
+                        if tiene_almacen:
+                            data_alm.append(["SUMA", "", ""] + [str(sum_alm[t]) for t in tallas_activas])
 
                         style_tabla_3 = TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f8fafc")), ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), 
